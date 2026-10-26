@@ -6,9 +6,10 @@ A mobile-first writing feedback app. Paste a draft, pick a focus, and get struct
 
 ## What it does
 
-- Accepts up to 20,000 characters of writing.
+- Accepts up to 20,000 characters of English or Vietnamese writing.
 - Sends the draft to an LLM with a predefined writing-coach prompt.
-- Streams back an answer with an overall impression, strengths, concrete improvements, a suggested revision, and one next step.
+- Streams back a TL;DR, scorecard, corrections, corrected and polished versions, a thinking review, an improvement plan, and a practice exercise.
+- Lets you edit the coach prompt in the browser and restore the default at any time.
 - Keeps drafts and preferences in `localStorage` on the device.
 - Works as a static site on GitHub Pages.
 
@@ -17,15 +18,22 @@ A mobile-first writing feedback app. Paste a draft, pick a focus, and get struct
 | Provider | API key | Notes |
 | --- | --- | --- |
 | LLM7 | Not needed | Default. Free anonymous tier with fair-use rate limits. |
+| Pollinations | Not needed | Keyless fallback. Default model: `gpt-oss-20b`. One request at a time, about 30 seconds apart. Blocks localhost requests. |
 | Groq | Free key | Fast free tier. Default model: `openai/gpt-oss-120b`. |
 | Google Gemini | Free key | Free tier from Google AI Studio. Default model: `gemini-3.5-flash-lite`. |
 | OpenRouter | Free key | Uses `openrouter/free` to route to an available free model. |
 
-LLM7 needs no key. Open the settings dialog to choose another provider and paste a free key; links to each provider's key page are shown there. Model IDs can be overridden under **Advanced**.
+LLM7 and Pollinations need no key. Open the settings dialog to choose another provider and paste a free key; links to each provider's key page are shown there. Model IDs can be overridden under **Advanced**.
 
-LLM7's anonymous quota is shared and can be busy for a minute at a time. When that happens, the app shows the suggested wait and a retry button. For more reliable access, use a free key from Groq, Gemini, or OpenRouter.
+LLM7's anonymous quota is shared and can be busy. When that happens, the app shows the suggested wait and a retry button. Pollinations is a keyless fallback, but it allows one request at a time and blocks requests from localhost. For the most reliable access, use a free key from Groq, Gemini, or OpenRouter.
 
 Free tiers and model availability change over time. If a provider stops working, switch providers or update the model ID.
+
+## Coach prompt
+
+The default coach prompt lives in `prompts/coach-prompt.txt` and is loaded when the app starts. Use **Edit prompt** in the composer to change it. A custom prompt is stored in browser `localStorage` and applies to the next request. **Use default prompt** restores the file version.
+
+The app sends the prompt as model instructions, then sends the draft in a separate user message inside `<draft>` tags. The placeholder `[Paste my Vietnamese or English writing here]` is replaced with a short note pointing to that message. The selected focus is appended as an extra instruction, so custom prompts still work with the focus chips.
 
 ## Privacy and API keys
 
@@ -73,6 +81,7 @@ For a project site, the app is served from `https://<user>.github.io/<repo>/`. A
 │   ├── markdown.js
 │   ├── prompt.js
 │   └── providers.js
+├── prompts/coach-prompt.txt
 ├── assets/icon.svg
 ├── site.webmanifest
 └── .github/workflows/deploy.yml

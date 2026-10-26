@@ -1,12 +1,14 @@
-import { FOCUS_OPTIONS, SAMPLE_DRAFT, buildPrompt } from "./prompt.js";
+import { FOCUS_OPTIONS, SAMPLE_DRAFT, buildPrompt, loadDefaultPrompt } from "./prompt.js";
 import { PROVIDERS, PROVIDER_LIST } from "./providers.js";
 import { renderMarkdown } from "./markdown.js";
 
 const MAX_DRAFT_LENGTH = 20000;
+const MAX_PROMPT_LENGTH = 20000;
 const STORAGE_KEYS = {
   draft: "draftwise:draft",
   focus: "draftwise:focus",
   settings: "draftwise:settings",
+  defaultPrompt: "draftwise:defaultPrompt",
 };
 
 const elements = {
@@ -36,6 +38,15 @@ const elements = {
   keyHelp: document.getElementById("keyHelp"),
   toggleKey: document.getElementById("toggleKey"),
   modelInput: document.getElementById("modelInput"),
+  promptStatus: document.getElementById("promptStatus"),
+  promptButton: document.getElementById("promptButton"),
+  promptDialog: document.getElementById("promptDialog"),
+  promptForm: document.getElementById("promptForm"),
+  promptInput: document.getElementById("promptInput"),
+  promptError: document.getElementById("promptError"),
+  resetPrompt: document.getElementById("resetPrompt"),
+  closePrompt: document.getElementById("closePrompt"),
+  cancelPrompt: document.getElementById("cancelPrompt"),
   closeSettings: document.getElementById("closeSettings"),
   cancelSettings: document.getElementById("cancelSettings"),
   toast: document.getElementById("toast"),
@@ -52,6 +63,8 @@ const state = {
   loading: false,
   toastTimer: null,
   settingsDraft: null,
+  defaultPrompt: "",
+  promptLoadState: "loading",
   themeMeta: document.querySelector('meta[name="theme-color"]'),
 };
 
@@ -72,7 +85,7 @@ function writeStorage(key, value) {
 }
 
 function loadSettings() {
-  const fallback = { provider: "llm7", keys: {}, models: {} };
+  const fallback = { provider: "llm7", keys: {}, models: {}, prompt: "" };
 
   try {
     const stored = JSON.parse(readStorage(STORAGE_KEYS.settings) || "null");
@@ -84,6 +97,7 @@ function loadSettings() {
       provider: PROVIDERS[stored.provider] ? stored.provider : "llm7",
       keys: stored.keys && typeof stored.keys === "object" ? stored.keys : {},
       models: stored.models && typeof stored.models === "object" ? stored.models : {},
+      prompt: typeof stored.prompt === "string" ? stored.prompt : "",
     };
   } catch {
     return fallback;
@@ -180,6 +194,95 @@ function selectFocus(focusId) {
   });
 }
 
+function updatePromptStatus() {
+  const custom = Boolean(state.settings.prompt);
+  let label = "Coach prompt · custom";
+
+  if (!custom) {
+    if (state.defaultPrompt) {
+      label = "Coach prompt · default";
+    } else if (state.promptLoadState === "loading") {
+      label = "Coach prompt · loading…";
+    } else {
+      label = "Coach prompt · not loaded";
+    }
+  }
+
+  elements.promptStatus.textContent = label;
+  elements.promptStatus.classList.toggle("is-custom", custom);
+  elements.resetPrompt.disabled = !state.defaultPrompt;
+}
+
+function setPromptError(message) {
+  elements.promptError.textContent = message || "";
+  elements.promptError.hidden = !message;
+}
+
+function openPrompt() {
+  elements.promptInput.value = state.settings.prompt || state.defaultPrompt;
+  setPromptError("");
+  if (!elements.promptDialog.open) {
+    elements.promptDialog.showModal();
+  }
+  window.setTimeout(() => elements.promptInput.focus(), 80);
+}
+
+function savePrompt(event) {
+  event.preventDefault();
+
+  const value = elements.promptInput.value.trim();
+  if (!value) {
+    setPromptError("The coach prompt cannot be empty.");
+    elements.promptInput.focus();
+    return;
+  }
+
+  if (value.length > MAX_PROMPT_LENGTH) {
+    setPromptError(`That prompt is too long. Keep it under ${MAX_PROMPT_LENGTH.toLocaleString()} characters.`);
+    elements.promptInput.focus();
+    return;
+  }
+
+  state.settings.prompt = value === state.defaultPrompt.trim() ? "" : value;
+  saveSettings();
+  updatePromptStatus();
+  elements.promptDialog.close();
+  showToast(state.settings.prompt ? "Custom prompt applied" : "Default prompt applied");
+}
+
+function useDefaultPrompt() {
+  if (!state.defaultPrompt) {
+    return;
+  }
+
+  state.settings.prompt = "";
+  saveSettings();
+  updatePromptStatus();
+  elements.promptDialog.close();
+  showToast("Default prompt restored");
+}
+
+async function loadCoachPrompt() {
+  try {
+    state.defaultPrompt = await loadDefaultPrompt();
+    writeStorage(STORAGE_KEYS.defaultPrompt, state.defaultPrompt);
+    state.promptLoadState = "ready";
+  } catch {
+    state.defaultPrompt = (readStorage(STORAGE_KEYS.defaultPrompt) || "").trim();
+    state.promptLoadState = state.defaultPrompt ? "ready" : "error";
+  }
+
+  updatePromptStatus();
+
+  if (
+    elements.promptDialog.open &&
+    !elements.promptInput.value.trim() &&
+    !state.settings.prompt
+  ) {
+    elements.promptInput.value = state.defaultPrompt;
+  }
+}
+
 function updateProviderLine() {
   const provider = currentProvider();
   const needsKey = !provider.keyless && !providerKey(provider.id);
@@ -247,6 +350,18 @@ function errorCopy(error) {
   const message = String(error.message || "");
 
   if (status === 401 || status === 403) {
+    const provider = currentProvider();
+
+    if (provider.keyless) {
+      return {
+        title: "The provider refused the request",
+        message: provider.id === "pollinations"
+          ? "Pollinations blocks requests from localhost. Try the deployed site, or choose another provider."
+          : "Try again, or switch providers in settings.",
+        settings: true,
+      };
+    }
+
     return {
       title: "The API key was rejected",
       message: "Open settings and check that your key is correct and still active.",
@@ -257,9 +372,12 @@ function errorCopy(error) {
   if (status === 429) {
     const retryAfter = Math.ceil(Number(error.retryAfter));
     const wait = Number.isFinite(retryAfter) && retryAfter > 0 ? `Try again in about ${retryAfter} seconds,` : "Wait a minute and try again,";
+    const fallback = currentProvider().id === "pollinations"
+      ? "or add a free key for Groq, Gemini, or OpenRouter"
+      : "switch to Pollinations (no key) or add a free key for Groq, Gemini, or OpenRouter";
     return {
       title: "The free tier is busy",
-      message: `${wait} or switch to Groq, Gemini, or OpenRouter with a free key.`,
+      message: `${wait} ${fallback}.`,
       settings: true,
     };
   }
@@ -376,6 +494,17 @@ async function submitFeedback(event) {
     return;
   }
 
+  const promptTemplate = state.settings.prompt || state.defaultPrompt;
+  if (!promptTemplate.trim()) {
+    if (state.promptLoadState === "loading") {
+      setFormError("The coach prompt is still loading. Try again in a moment.");
+    } else {
+      setFormError("The coach prompt is not available. Add one with Edit prompt.");
+      openPrompt();
+    }
+    return;
+  }
+
   const provider = currentProvider();
   const apiKey = providerKey(provider.id);
 
@@ -394,7 +523,7 @@ async function submitFeedback(event) {
   const requestId = ++state.requestId;
   const controller = new AbortController();
   const model = providerModel(provider.id);
-  const prompt = buildPrompt(text, state.focus);
+  const prompt = buildPrompt(promptTemplate, text, state.focus);
   const startedAt = performance.now();
 
   state.controller = controller;
@@ -629,6 +758,18 @@ function bindEvents() {
   elements.settingsButton.addEventListener("click", () => openSettings());
   elements.providerButton.addEventListener("click", () => openSettings());
 
+  elements.promptButton.addEventListener("click", openPrompt);
+  elements.closePrompt.addEventListener("click", () => elements.promptDialog.close());
+  elements.cancelPrompt.addEventListener("click", () => elements.promptDialog.close());
+  elements.promptForm.addEventListener("submit", savePrompt);
+  elements.resetPrompt.addEventListener("click", useDefaultPrompt);
+
+  elements.promptDialog.addEventListener("click", (event) => {
+    if (event.target === elements.promptDialog) {
+      elements.promptDialog.close();
+    }
+  });
+
   elements.closeSettings.addEventListener("click", () => elements.settingsDialog.close());
   elements.cancelSettings.addEventListener("click", () => elements.settingsDialog.close());
 
@@ -677,7 +818,9 @@ function init() {
   autosizeDraft();
   buildFocusChips();
   updateProviderLine();
+  updatePromptStatus();
   bindEvents();
+  loadCoachPrompt();
 
   if (state.themeMeta) {
     state.themeMeta.content = window.matchMedia("(prefers-color-scheme: dark)").matches ? "#141210" : "#f5f1e8";

@@ -318,6 +318,13 @@ svg {
   color: var(--accent);
 }
 
+.text-button:disabled {
+  color: var(--muted);
+  cursor: default;
+  opacity: 0.6;
+  text-decoration: none;
+}
+
 .editor-wrap {
   position: relative;
 }
@@ -391,11 +398,30 @@ svg {
   color: var(--ink-soft);
 }
 
-.chip[aria-pressed="true"] {
+.chip[aria-checked="true"] {
   border-color: var(--accent);
   color: var(--accent-strong);
   background: var(--accent-soft);
   font-weight: 650;
+}
+
+.prompt-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 6px;
+  padding: 0 2px;
+}
+
+.prompt-status {
+  color: var(--muted);
+  font-size: 0.7rem;
+}
+
+.prompt-status.is-custom {
+  color: var(--accent-strong);
+  font-weight: 600;
 }
 
 .composer-actions {
@@ -979,6 +1005,30 @@ select.input {
 .key-toggle:hover {
   color: var(--ink-soft);
   background: var(--surface);
+}
+
+.prompt-input {
+  height: auto;
+  min-height: 260px;
+  max-height: 48dvh;
+  padding: 12px;
+  font-family: var(--font-sans);
+  font-size: 0.82rem;
+  line-height: 1.55;
+  resize: vertical;
+}
+
+.prompt-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.prompt-saved {
+  color: var(--muted);
+  font-size: 0.7rem;
 }
 
 .advanced {

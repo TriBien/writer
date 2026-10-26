@@ -1,4 +1,4 @@
-const MAX_OUTPUT_TOKENS = 1600;
+const MAX_OUTPUT_TOKENS = 4000;
 
 function openAIText(json) {
   const choice = json?.choices?.[0];
@@ -142,7 +142,7 @@ async function* readSSE(response, extract) {
   }
 }
 
-function openAIRequest({ url, headers, system, user, model, signal }) {
+function openAIRequest({ url, headers, system, user, model, signal, extraBody = {} }) {
   return fetch(url, {
     method: "POST",
     headers: {
@@ -158,6 +158,7 @@ function openAIRequest({ url, headers, system, user, model, signal }) {
       stream: true,
       temperature: 0.4,
       max_tokens: MAX_OUTPUT_TOKENS,
+      ...extraBody,
     }),
     signal,
   });
@@ -180,6 +181,28 @@ export const PROVIDERS = {
         user,
         model: model || "mistral-Nemo-Instruct-2407",
         signal,
+      });
+      yield* readSSE(response, openAIText);
+    },
+  },
+
+  pollinations: {
+    id: "pollinations",
+    label: "Pollinations",
+    keyless: true,
+    defaultModel: "gpt-oss-20b",
+    description: "Free community tier with no key. One request at a time, about 30 seconds apart. Not available on localhost.",
+    keyUrl: "https://pollinations.ai/",
+    keyLinkLabel: "About Pollinations",
+    async *stream({ system, user, model, signal }) {
+      const response = await openAIRequest({
+        url: "https://text.pollinations.ai/openai/chat/completions",
+        headers: {},
+        system,
+        user,
+        model: model || "gpt-oss-20b",
+        signal,
+        extraBody: { reasoning_effort: "low" },
       });
       yield* readSSE(response, openAIText);
     },
