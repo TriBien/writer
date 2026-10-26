@@ -1,0 +1,18 @@
+{
+  "name": "Draftwise — Better feedback for your writing",
+  "short_name": "Draftwise",
+  "description": "Paste a draft and get focused, actionable feedback from a free AI writing coach.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f5f1e8",
+  "theme_color": "#f5f1e8",
+  "icons": [
+    {
+      "src": "assets/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
