@@ -108,7 +108,7 @@ function writeStorage(key, value) {
 }
 
 function loadSettings() {
-  const fallback = { provider: "llm7", keys: {}, models: {}, prompt: "" };
+  const fallback = { provider: "pollinations", keys: {}, models: {}, prompt: "" };
 
   try {
     const stored = JSON.parse(readStorage(STORAGE_KEYS.settings) || "null");
@@ -117,7 +117,7 @@ function loadSettings() {
     }
 
     return {
-      provider: PROVIDERS[stored.provider] ? stored.provider : "llm7",
+      provider: PROVIDERS[stored.provider] ? stored.provider : "pollinations",
       keys: stored.keys && typeof stored.keys === "object" ? stored.keys : {},
       models: stored.models && typeof stored.models === "object" ? stored.models : {},
       prompt: typeof stored.prompt === "string" ? stored.prompt : "",
@@ -165,7 +165,7 @@ function normalizeHistoryEntry(entry) {
     draft,
     output,
     focusId: FOCUS_OPTIONS.some((option) => option.id === entry.focusId) ? entry.focusId : "general",
-    provider: typeof entry.provider === "string" ? entry.provider : "llm7",
+    provider: typeof entry.provider === "string" ? entry.provider : "pollinations",
     model: typeof entry.model === "string" ? entry.model : "",
     duration: Number.isFinite(duration) && duration > 0 ? duration : null,
   };
@@ -259,7 +259,7 @@ function providerKey(providerId) {
 }
 
 function providerModel(providerId) {
-  const provider = PROVIDERS[providerId] || PROVIDERS.llm7;
+  const provider = PROVIDERS[providerId] || PROVIDERS.pollinations;
   return (state.settings.models[providerId] || "").trim() || provider.defaultModel;
 }
 
@@ -791,7 +791,7 @@ function errorCopy(error) {
   if (error.name === "TypeError" || /fetch|network|connection/i.test(message)) {
     return {
       title: "Could not reach the provider",
-      message: "Check your internet connection and try again. The keyless LLM7 option is the most reliable.",
+      message: "Check your internet connection and try again. The keyless Pollinations option is the most reliable.",
       settings: true,
     };
   }
