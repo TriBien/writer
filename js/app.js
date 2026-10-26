@@ -257,7 +257,7 @@ function errorCopy(error) {
   if (status === 429) {
     return {
       title: "Rate limit reached",
-      message: "You have hit the provider's free limit for now. Wait a few minutes or switch to another provider.",
+      message: "The free tier is busy. Wait a minute and try again, or switch to Groq, Gemini, or OpenRouter with a free key.",
       settings: true,
     };
   }
