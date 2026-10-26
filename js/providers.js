@@ -165,27 +165,6 @@ function openAIRequest({ url, headers, system, user, model, signal, extraBody = 
 }
 
 export const PROVIDERS = {
-  llm7: {
-    id: "llm7",
-    label: "LLM7",
-    keyless: true,
-    defaultModel: "mistral-Nemo-Instruct-2407",
-    description: "Free anonymous tier. No account or API key needed, with fair-use rate limits.",
-    keyUrl: "https://llm7.io/",
-    keyLinkLabel: "About LLM7",
-    async *stream({ system, user, model, signal }) {
-      const response = await openAIRequest({
-        url: "https://api.llm7.io/v1/chat/completions",
-        headers: {},
-        system,
-        user,
-        model: model || "mistral-Nemo-Instruct-2407",
-        signal,
-      });
-      yield* readSSE(response, openAIText);
-    },
-  },
-
   pollinations: {
     id: "pollinations",
     label: "Pollinations",
@@ -203,6 +182,27 @@ export const PROVIDERS = {
         model: model || "gpt-oss-20b",
         signal,
         extraBody: { reasoning_effort: "low" },
+      });
+      yield* readSSE(response, openAIText);
+    },
+  },
+
+  llm7: {
+    id: "llm7",
+    label: "LLM7",
+    keyless: true,
+    defaultModel: "mistral-Nemo-Instruct-2407",
+    description: "Free anonymous tier. No account or API key needed, with fair-use rate limits.",
+    keyUrl: "https://llm7.io/",
+    keyLinkLabel: "About LLM7",
+    async *stream({ system, user, model, signal }) {
+      const response = await openAIRequest({
+        url: "https://api.llm7.io/v1/chat/completions",
+        headers: {},
+        system,
+        user,
+        model: model || "mistral-Nemo-Instruct-2407",
+        signal,
       });
       yield* readSSE(response, openAIText);
     },

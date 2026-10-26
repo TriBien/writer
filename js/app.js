@@ -251,7 +251,7 @@ function sessionPreview(output) {
 }
 
 function currentProvider() {
-  return PROVIDERS[state.settings.provider] || PROVIDERS.llm7;
+  return PROVIDERS[state.settings.provider] || PROVIDERS.pollinations;
 }
 
 function providerKey(providerId) {
