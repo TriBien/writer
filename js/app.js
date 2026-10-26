@@ -4,11 +4,14 @@ import { renderMarkdown } from "./markdown.js";
 
 const MAX_DRAFT_LENGTH = 20000;
 const MAX_PROMPT_LENGTH = 20000;
+const HISTORY_LIMIT = 100;
+const HISTORY_SIZE_LIMIT = 1000000;
 const STORAGE_KEYS = {
   draft: "draftwise:draft",
   focus: "draftwise:focus",
   settings: "draftwise:settings",
   defaultPrompt: "draftwise:defaultPrompt",
+  history: "draftwise:history",
 };
 
 const elements = {
@@ -21,6 +24,8 @@ const elements = {
   submitLabel: document.querySelector("#submitButton .button-label"),
   sampleButton: document.getElementById("sampleButton"),
   providerButton: document.getElementById("providerButton"),
+  historyButton: document.getElementById("historyButton"),
+  historyCount: document.getElementById("historyCount"),
   resultCard: document.getElementById("resultCard"),
   resultBody: document.getElementById("resultBody"),
   resultMeta: document.getElementById("resultMeta"),
@@ -49,6 +54,22 @@ const elements = {
   cancelPrompt: document.getElementById("cancelPrompt"),
   closeSettings: document.getElementById("closeSettings"),
   cancelSettings: document.getElementById("cancelSettings"),
+  historyDialog: document.getElementById("historyDialog"),
+  closeHistory: document.getElementById("closeHistory"),
+  historyListView: document.getElementById("historyListView"),
+  historyDetailView: document.getElementById("historyDetailView"),
+  historyTitle: document.getElementById("historyTitle"),
+  historySummary: document.getElementById("historySummary"),
+  historyList: document.getElementById("historyList"),
+  historyEmpty: document.getElementById("historyEmpty"),
+  clearHistory: document.getElementById("clearHistory"),
+  historyBack: document.getElementById("historyBack"),
+  historyDetailMeta: document.getElementById("historyDetailMeta"),
+  historyDraft: document.getElementById("historyDraft"),
+  historyFeedback: document.getElementById("historyFeedback"),
+  historyCopy: document.getElementById("historyCopy"),
+  historyDelete: document.getElementById("historyDelete"),
+  historyRestore: document.getElementById("historyRestore"),
   toast: document.getElementById("toast"),
   srStatus: document.getElementById("srStatus"),
 };
@@ -65,6 +86,8 @@ const state = {
   settingsDraft: null,
   defaultPrompt: "",
   promptLoadState: "loading",
+  history: loadHistory(),
+  historyEntry: null,
   themeMeta: document.querySelector('meta[name="theme-color"]'),
 };
 
@@ -113,6 +136,120 @@ function loadFocus() {
   return FOCUS_OPTIONS.some((option) => option.id === stored) ? stored : "general";
 }
 
+function createHistoryId() {
+  if (globalThis.crypto?.randomUUID) {
+    return globalThis.crypto.randomUUID();
+  }
+
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function normalizeHistoryEntry(entry) {
+  if (!entry || typeof entry !== "object") {
+    return null;
+  }
+
+  const draft = typeof entry.draft === "string" ? entry.draft : "";
+  const output = typeof entry.output === "string" ? entry.output : "";
+
+  if (!draft.trim() || !output.trim()) {
+    return null;
+  }
+
+  const createdAt = Number(entry.createdAt);
+  const duration = Number(entry.duration);
+
+  return {
+    id: typeof entry.id === "string" && entry.id ? entry.id : createHistoryId(),
+    createdAt: Number.isFinite(createdAt) ? createdAt : Date.now(),
+    draft,
+    output,
+    focusId: FOCUS_OPTIONS.some((option) => option.id === entry.focusId) ? entry.focusId : "general",
+    provider: typeof entry.provider === "string" ? entry.provider : "llm7",
+    model: typeof entry.model === "string" ? entry.model : "",
+    duration: Number.isFinite(duration) && duration > 0 ? duration : null,
+  };
+}
+
+function loadHistory() {
+  try {
+    const stored = JSON.parse(readStorage(STORAGE_KEYS.history) || "[]");
+    if (!Array.isArray(stored)) {
+      return [];
+    }
+
+    return stored
+      .map(normalizeHistoryEntry)
+      .filter(Boolean)
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .slice(0, HISTORY_LIMIT);
+  } catch {
+    return [];
+  }
+}
+
+function writeHistory(entries) {
+  let list = entries.slice(0, HISTORY_LIMIT);
+
+  while (list.length) {
+    const payload = JSON.stringify(list);
+
+    if (payload.length <= HISTORY_SIZE_LIMIT) {
+      try {
+        localStorage.setItem(STORAGE_KEYS.history, payload);
+        return list;
+      } catch {
+        // Try again with the oldest session removed.
+      }
+    }
+
+    list = list.slice(0, -1);
+  }
+
+  return null;
+}
+
+function countWords(text) {
+  const trimmed = text.trim();
+  return trimmed ? trimmed.split(/\s+/).length : 0;
+}
+
+function focusLabel(focusId) {
+  return (FOCUS_OPTIONS.find((option) => option.id === focusId) || FOCUS_OPTIONS[0]).label;
+}
+
+function providerLabel(providerId) {
+  return PROVIDERS[providerId]?.label || "Unknown provider";
+}
+
+function formatSessionDate(timestamp) {
+  return new Date(timestamp).toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function sessionTitle(draft) {
+  const line = draft.split("\n").map((value) => value.trim()).find(Boolean) || "Untitled session";
+  return line.length > 72 ? `${line.slice(0, 72).trimEnd()}…` : line;
+}
+
+function sessionPreview(output) {
+  const text = output
+    .slice(0, 4000)
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/^\s*\|?[\s:|-]{3,}\|?\s*$/gm, " ")
+    .replace(/[#>*_`~|]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return text.length > 140 ? `${text.slice(0, 140).trimEnd()}…` : text;
+}
+
 function currentProvider() {
   return PROVIDERS[state.settings.provider] || PROVIDERS.llm7;
 }
@@ -127,8 +264,7 @@ function providerModel(providerId) {
 }
 
 function updateWordCount() {
-  const text = elements.draft.value.trim();
-  const words = text ? text.split(/\s+/).length : 0;
+  const words = countWords(elements.draft.value);
   elements.wordCount.textContent = `${words.toLocaleString()} ${words === 1 ? "word" : "words"}`;
 }
 
@@ -151,6 +287,11 @@ function setFormError(message) {
 }
 
 function showToast(message) {
+  const host = document.querySelector("dialog[open]") || document.body;
+  if (elements.toast.parentElement !== host) {
+    host.append(elements.toast);
+  }
+
   elements.toast.textContent = message;
   elements.toast.classList.add("show");
   window.clearTimeout(state.toastTimer);
@@ -283,6 +424,247 @@ async function loadCoachPrompt() {
   }
 }
 
+function updateHistoryBadge() {
+  const count = state.history.length;
+  elements.historyCount.textContent = String(count);
+  elements.historyCount.hidden = count === 0;
+  elements.historyButton.setAttribute(
+    "aria-label",
+    count === 0
+      ? "Open writing history"
+      : `Open writing history, ${count} saved ${count === 1 ? "session" : "sessions"}`,
+  );
+}
+
+function renderHistory() {
+  elements.historyList.replaceChildren();
+
+  const count = state.history.length;
+  elements.historyEmpty.hidden = count > 0;
+  elements.clearHistory.hidden = count === 0;
+  elements.historySummary.textContent = count
+    ? `${count} saved ${count === 1 ? "session" : "sessions"} on this device.`
+    : "Saved sessions stay in this browser.";
+
+  state.history.forEach((entry) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "history-item";
+    button.dataset.id = entry.id;
+
+    const top = document.createElement("span");
+    top.className = "history-item-top";
+
+    const date = document.createElement("span");
+    date.className = "history-date";
+    date.textContent = formatSessionDate(entry.createdAt);
+
+    const focus = document.createElement("span");
+    focus.className = "history-focus";
+    focus.textContent = focusLabel(entry.focusId);
+
+    const title = document.createElement("span");
+    title.className = "history-title";
+    title.textContent = sessionTitle(entry.draft);
+
+    const preview = document.createElement("span");
+    preview.className = "history-preview";
+    preview.textContent = sessionPreview(entry.output);
+
+    const stats = document.createElement("span");
+    stats.className = "history-stats";
+    const words = countWords(entry.draft).toLocaleString();
+    const duration = entry.duration ? ` · ${entry.duration.toFixed(1)}s` : "";
+    stats.textContent = `${words} words · ${providerLabel(entry.provider)}${duration}`;
+
+    top.append(date, focus);
+    button.append(top, title, preview, stats);
+    button.addEventListener("click", () => showHistoryEntry(entry.id));
+    elements.historyList.append(button);
+  });
+}
+
+function scrollHistoryToTop() {
+  elements.historyDialog.querySelector(".sheet")?.scrollTo({ top: 0, behavior: "auto" });
+}
+
+function focusHistoryList() {
+  window.requestAnimationFrame(() => {
+    const firstItem = elements.historyList.querySelector(".history-item");
+    (firstItem || elements.closeHistory).focus();
+  });
+}
+
+function showHistoryList() {
+  state.historyEntry = null;
+  elements.historyListView.hidden = false;
+  elements.historyDetailView.hidden = true;
+  elements.historyTitle.textContent = "History";
+  elements.historyDraft.textContent = "";
+  elements.historyFeedback.replaceChildren();
+  scrollHistoryToTop();
+}
+
+function showHistoryEntry(entryId) {
+  const entry = state.history.find((item) => item.id === entryId);
+
+  if (!entry) {
+    showHistoryList();
+    return;
+  }
+
+  state.historyEntry = entry;
+  elements.historyListView.hidden = true;
+  elements.historyDetailView.hidden = false;
+  elements.historyTitle.textContent = "Session";
+
+  const duration = entry.duration ? ` · ${entry.duration.toFixed(1)}s` : "";
+  const words = countWords(entry.draft).toLocaleString();
+  elements.historyDetailMeta.textContent =
+    `${formatSessionDate(entry.createdAt)} · ${words} words · ${focusLabel(entry.focusId)} · ${providerLabel(entry.provider)}${duration}`;
+  elements.historyDetailMeta.title = entry.model || "";
+  elements.historyDraft.textContent = entry.draft;
+  elements.historyFeedback.innerHTML = renderMarkdown(entry.output);
+  elements.historyBack.focus({ preventScroll: true });
+  scrollHistoryToTop();
+}
+
+function openHistory() {
+  showHistoryList();
+  renderHistory();
+  updateHistoryBadge();
+
+  if (!elements.historyDialog.open) {
+    elements.historyDialog.showModal();
+  }
+}
+
+function saveHistoryEntry({ draft, focusId, providerId, model, duration }) {
+  const output = state.output.trim();
+  if (!draft.trim() || !output) {
+    return;
+  }
+
+  const entry = normalizeHistoryEntry({
+    id: createHistoryId(),
+    createdAt: Date.now(),
+    draft,
+    output,
+    focusId,
+    provider: providerId,
+    model,
+    duration,
+  });
+
+  if (!entry) {
+    return;
+  }
+
+  const saved = writeHistory([entry, ...state.history]);
+  if (!saved) {
+    showToast("Feedback ready, but history could not be saved.");
+    return;
+  }
+
+  state.history = saved;
+  updateHistoryBadge();
+
+  if (elements.historyDialog.open && elements.historyDetailView.hidden) {
+    renderHistory();
+  }
+}
+
+function restoreHistoryDraft() {
+  const entry = state.historyEntry;
+  if (!entry) {
+    return;
+  }
+
+  const currentDraft = elements.draft.value.trim();
+  if (
+    currentDraft &&
+    currentDraft !== entry.draft.trim() &&
+    !window.confirm("Replace the current draft with this saved session?")
+  ) {
+    return;
+  }
+
+  elements.draft.value = entry.draft;
+  elements.draft.dispatchEvent(new Event("input", { bubbles: true }));
+  writeStorage(STORAGE_KEYS.draft, entry.draft);
+  selectFocus(entry.focusId);
+  elements.historyDialog.close();
+
+  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  elements.draft.focus({ preventScroll: true });
+  elements.draft.scrollIntoView({
+    behavior: reduced ? "auto" : "smooth",
+    block: "center",
+  });
+  showToast("Draft restored from history");
+}
+
+function deleteHistoryEntry() {
+  const entry = state.historyEntry;
+  if (!entry) {
+    return;
+  }
+
+  if (!window.confirm("Delete this saved session? This cannot be undone.")) {
+    return;
+  }
+
+  const next = state.history.filter((item) => item.id !== entry.id);
+
+  if (next.length) {
+    const saved = writeHistory(next);
+    if (!saved) {
+      showToast("Could not update history.");
+      return;
+    }
+    state.history = saved;
+  } else {
+    try {
+      localStorage.removeItem(STORAGE_KEYS.history);
+    } catch {
+      showToast("Could not update history.");
+      return;
+    }
+    state.history = [];
+  }
+
+  updateHistoryBadge();
+  showHistoryList();
+  renderHistory();
+  focusHistoryList();
+  showToast("Session deleted");
+}
+
+function clearAllHistory() {
+  if (!state.history.length) {
+    return;
+  }
+
+  const count = state.history.length;
+  if (!window.confirm(`Clear all ${count} saved ${count === 1 ? "session" : "sessions"}? This cannot be undone.`)) {
+    return;
+  }
+
+  try {
+    localStorage.removeItem(STORAGE_KEYS.history);
+  } catch {
+    showToast("Could not clear history.");
+    return;
+  }
+
+  state.history = [];
+  updateHistoryBadge();
+  showHistoryList();
+  renderHistory();
+  focusHistoryList();
+  showToast("History cleared");
+}
+
 function updateProviderLine() {
   const provider = currentProvider();
   const needsKey = !provider.keyless && !providerKey(provider.id);
@@ -332,17 +714,17 @@ function startResult(provider, model) {
   window.requestAnimationFrame(scrollToResult);
 }
 
-function finishResult(startedAt) {
+function finishResult(startedAt, provider, model) {
   elements.resultCard.setAttribute("aria-busy", "false");
   elements.resultBody.innerHTML = renderMarkdown(state.output);
   elements.resultBody.classList.remove("is-streaming");
   elements.thinking.hidden = true;
   elements.copyButton.disabled = !state.output.trim();
   elements.retryButton.hidden = false;
-  const seconds = Math.max(0.1, (performance.now() - startedAt) / 1000).toFixed(1);
-  const provider = currentProvider();
-  elements.resultMeta.textContent = `${provider.label} · ${seconds}s`;
-  elements.resultMeta.title = providerModel(provider.id);
+  const duration = Math.max(0.1, (performance.now() - startedAt) / 1000);
+  elements.resultMeta.textContent = `${provider.label} · ${duration.toFixed(1)}s`;
+  elements.resultMeta.title = model;
+  return duration;
 }
 
 function errorCopy(error) {
@@ -523,7 +905,8 @@ async function submitFeedback(event) {
   const requestId = ++state.requestId;
   const controller = new AbortController();
   const model = providerModel(provider.id);
-  const prompt = buildPrompt(promptTemplate, text, state.focus);
+  const focusId = state.focus;
+  const prompt = buildPrompt(promptTemplate, text, focusId);
   const startedAt = performance.now();
 
   state.controller = controller;
@@ -562,9 +945,15 @@ async function submitFeedback(event) {
       throw new Error("The model returned an empty response.");
     }
 
-    finishResult(startedAt);
+    const duration = finishResult(startedAt, provider, model);
+    saveHistoryEntry({
+      draft: text,
+      focusId,
+      providerId: provider.id,
+      model,
+      duration,
+    });
     announce("Feedback ready.");
-    elements.resultMeta.title = model;
   } catch (error) {
     if (error.name === "AbortError" || requestId !== state.requestId) {
       return;
@@ -580,17 +969,13 @@ async function submitFeedback(event) {
   }
 }
 
-async function copyFeedback() {
-  if (!state.output.trim()) {
-    return;
-  }
-
+async function copyText(value, successMessage) {
   try {
     if (navigator.clipboard && window.isSecureContext) {
-      await navigator.clipboard.writeText(state.output);
+      await navigator.clipboard.writeText(value);
     } else {
       const area = document.createElement("textarea");
-      area.value = state.output;
+      area.value = value;
       area.setAttribute("readonly", "");
       area.style.position = "fixed";
       area.style.opacity = "0";
@@ -599,10 +984,18 @@ async function copyFeedback() {
       document.execCommand("copy");
       area.remove();
     }
-    showToast("Feedback copied");
+    showToast(successMessage);
   } catch {
     showToast("Could not copy — select the text manually.");
   }
+}
+
+async function copyFeedback() {
+  if (!state.output.trim()) {
+    return;
+  }
+
+  await copyText(state.output, "Feedback copied");
 }
 
 function setSettingsError(message) {
@@ -755,6 +1148,28 @@ function bindEvents() {
     elements.form.requestSubmit();
   });
 
+  elements.historyButton.addEventListener("click", openHistory);
+  elements.closeHistory.addEventListener("click", () => elements.historyDialog.close());
+  elements.historyBack.addEventListener("click", () => {
+    showHistoryList();
+    renderHistory();
+    focusHistoryList();
+  });
+  elements.clearHistory.addEventListener("click", clearAllHistory);
+  elements.historyDelete.addEventListener("click", deleteHistoryEntry);
+  elements.historyRestore.addEventListener("click", restoreHistoryDraft);
+  elements.historyCopy.addEventListener("click", () => {
+    if (state.historyEntry) {
+      copyText(state.historyEntry.output, "Feedback copied");
+    }
+  });
+
+  elements.historyDialog.addEventListener("click", (event) => {
+    if (event.target === elements.historyDialog) {
+      elements.historyDialog.close();
+    }
+  });
+
   elements.settingsButton.addEventListener("click", () => openSettings());
   elements.providerButton.addEventListener("click", () => openSettings());
 
@@ -819,6 +1234,7 @@ function init() {
   buildFocusChips();
   updateProviderLine();
   updatePromptStatus();
+  updateHistoryBadge();
   bindEvents();
   loadCoachPrompt();
 

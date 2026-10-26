@@ -11,7 +11,8 @@ A mobile-first writing feedback app. Paste a draft, pick a focus, and get struct
 - Streams back a TL;DR, scorecard, corrections, corrected and polished versions, a thinking review, an improvement plan, and a practice exercise.
 - Renders comparison tables as clean tables on desktop and stacked label/value cards on mobile.
 - Lets you edit the coach prompt in the browser and restore the default at any time.
-- Keeps drafts and preferences in `localStorage` on the device.
+- Saves completed sessions so you can reopen the draft and the AI feedback later.
+- Keeps drafts, preferences, and up to 30 recent sessions in `localStorage` on the device.
 - Works as a static site on GitHub Pages.
 
 ## Free providers
@@ -36,9 +37,17 @@ The default coach prompt lives in `prompts/coach-prompt.txt` and is loaded when 
 
 The app sends the prompt as model instructions, then sends the draft in a separate user message inside `<draft>` tags. The placeholder `[Paste my Vietnamese or English writing here]` is replaced with a short note pointing to that message. The selected focus is appended as an extra instruction, so custom prompts still work with the focus chips.
 
+## History
+
+Every completed feedback request is saved automatically. Open the clock icon in the header to browse your recent sessions. Each session keeps the original draft and the rendered AI feedback; you can copy the feedback, restore the draft and focus, delete one session, or clear everything.
+
+Up to 30 recent sessions are kept, and older or oversized entries are removed automatically. History lives only in this browser. If local storage is unavailable or full, the feedback still works but that session may not be saved.
+
 ## Privacy and API keys
 
 This is a static site. Drafts go directly from the browser to the selected provider; there is no server operated by this project.
+
+Completed sessions are saved in `localStorage` so you can review them. They stay on the device and never go to this project's servers. Use **History → Clear history** to remove them.
 
 API keys are stored in the browser's `localStorage` and sent only to the selected provider. Never hard-code a key into this repository. Use a restricted or disposable key, and clear it when using a shared device.
 
