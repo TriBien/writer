@@ -32,8 +32,8 @@ Provide:
 1. **TL;DR:** Overall assessment and biggest improvement opportunity.
 2. **Scorecard:** Rate writing quality and thinking quality from 1–10, with brief justifications.
 3. **Corrections:** Show original text, improved version, and explanations of significant mistakes.
-4. **Corrected Version:** Fix errors while preserving my original meaning and voice.
-5. **Polished Version:** Rewrite naturally and effectively for the intended audience.
+4. **Vietnamese Version:** Rewrite naturally and effectively for the intended audience in Vietnamese.
+5. **English Version:** Rewrite naturally and effectively for the intended audience in English.
 6. **Thinking Review:** Identify strengths, weaknesses, assumptions, counterarguments, and missing perspectives.
 7. **Improvement Plan:** Recommend the three most valuable improvements.
 
