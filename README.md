@@ -23,6 +23,8 @@ A mobile-first writing feedback app. Paste a draft, pick a focus, and get struct
 
 LLM7 needs no key. Open the settings dialog to choose another provider and paste a free key; links to each provider's key page are shown there. Model IDs can be overridden under **Advanced**.
 
+LLM7's anonymous quota is shared and can be busy for a minute at a time. When that happens, the app shows the suggested wait and a retry button. For more reliable access, use a free key from Groq, Gemini, or OpenRouter.
+
 Free tiers and model availability change over time. If a provider stops working, switch providers or update the model ID.
 
 ## Privacy and API keys
