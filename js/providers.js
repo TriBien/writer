@@ -16,6 +16,7 @@ function geminiText(json) {
 
 async function responseError(response) {
   let detail = "";
+  let retryAfter = null;
 
   try {
     const body = await response.text();
@@ -23,6 +24,10 @@ async function responseError(response) {
       try {
         const parsed = JSON.parse(body);
         detail = parsed?.error?.message || parsed?.message || body;
+        const rawRetry = parsed?.retry_after ?? parsed?.error?.retry_after;
+        if (rawRetry != null) {
+          retryAfter = Number(rawRetry);
+        }
       } catch {
         detail = body;
       }
@@ -31,12 +36,20 @@ async function responseError(response) {
     detail = "";
   }
 
+  if (!Number.isFinite(retryAfter) || retryAfter <= 0) {
+    const headerRetry = Number(response.headers.get("retry-after"));
+    retryAfter = Number.isFinite(headerRetry) && headerRetry > 0 ? headerRetry : null;
+  }
+
   if (detail.length > 400) {
     detail = `${detail.slice(0, 400)}…`;
   }
 
   const error = new Error(detail || `The provider returned status ${response.status}.`);
   error.status = response.status;
+  if (retryAfter) {
+    error.retryAfter = retryAfter;
+  }
   return error;
 }
 

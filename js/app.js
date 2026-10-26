@@ -255,9 +255,11 @@ function errorCopy(error) {
   }
 
   if (status === 429) {
+    const retryAfter = Math.ceil(Number(error.retryAfter));
+    const wait = Number.isFinite(retryAfter) && retryAfter > 0 ? `Try again in about ${retryAfter} seconds,` : "Wait a minute and try again,";
     return {
-      title: "Rate limit reached",
-      message: "The free tier is busy. Wait a minute and try again, or switch to Groq, Gemini, or OpenRouter with a free key.",
+      title: "The free tier is busy",
+      message: `${wait} or switch to Groq, Gemini, or OpenRouter with a free key.`,
       settings: true,
     };
   }
