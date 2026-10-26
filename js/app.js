@@ -30,6 +30,7 @@ const elements = {
   resultBody: document.getElementById("resultBody"),
   resultMeta: document.getElementById("resultMeta"),
   thinking: document.getElementById("thinking"),
+  newSessionButton: document.getElementById("newSessionButton"),
   copyButton: document.getElementById("copyButton"),
   retryButton: document.getElementById("retryButton"),
   settingsButton: document.getElementById("settingsButton"),
@@ -707,6 +708,7 @@ function startResult(provider, model) {
   elements.resultBody.innerHTML = "";
   elements.resultBody.classList.add("is-streaming");
   elements.thinking.hidden = false;
+  elements.newSessionButton.hidden = true;
   elements.copyButton.disabled = true;
   elements.retryButton.hidden = true;
   elements.resultMeta.textContent = model ? `${provider.label} · ${model}` : provider.label;
@@ -719,6 +721,7 @@ function finishResult(startedAt, provider, model) {
   elements.resultBody.innerHTML = renderMarkdown(state.output);
   elements.resultBody.classList.remove("is-streaming");
   elements.thinking.hidden = true;
+  elements.newSessionButton.hidden = false;
   elements.copyButton.disabled = !state.output.trim();
   elements.retryButton.hidden = false;
   const duration = Math.max(0.1, (performance.now() - startedAt) / 1000);
@@ -809,6 +812,7 @@ function showResultError(error) {
   elements.resultBody.innerHTML = "";
   elements.resultBody.classList.remove("is-streaming");
   elements.thinking.hidden = true;
+  elements.newSessionButton.hidden = true;
   elements.copyButton.disabled = true;
   elements.retryButton.hidden = true;
   elements.resultMeta.textContent = currentProvider().label;
@@ -998,6 +1002,41 @@ async function copyFeedback() {
   await copyText(state.output, "Feedback copied");
 }
 
+function startNewSession() {
+  state.controller?.abort();
+  state.controller = null;
+  state.requestId += 1;
+  state.output = "";
+  state.renderQueued = false;
+  setLoading(false);
+
+  elements.resultCard.hidden = true;
+  elements.resultCard.setAttribute("aria-busy", "false");
+  elements.resultBody.innerHTML = "";
+  elements.resultBody.classList.remove("is-streaming");
+  elements.thinking.hidden = true;
+  elements.newSessionButton.hidden = true;
+  elements.copyButton.disabled = true;
+  elements.retryButton.hidden = true;
+  elements.resultMeta.textContent = "";
+  elements.resultMeta.title = "";
+
+  elements.draft.value = "";
+  elements.draft.dispatchEvent(new Event("input", { bubbles: true }));
+  window.clearTimeout(saveDraftSoon.timer);
+  writeStorage(STORAGE_KEYS.draft, "");
+  setFormError("");
+
+  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  elements.draft.focus({ preventScroll: true });
+  elements.draft.scrollIntoView({
+    behavior: reduced ? "auto" : "smooth",
+    block: "center",
+  });
+  showToast("New session started");
+  announce("New writing session started.");
+}
+
 function setSettingsError(message) {
   elements.settingsError.textContent = message || "";
   elements.settingsError.hidden = !message;
@@ -1143,6 +1182,7 @@ function bindEvents() {
   });
 
   elements.copyButton.addEventListener("click", copyFeedback);
+  elements.newSessionButton.addEventListener("click", startNewSession);
 
   elements.retryButton.addEventListener("click", () => {
     elements.form.requestSubmit();

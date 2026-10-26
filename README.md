@@ -39,7 +39,7 @@ The app sends the prompt as model instructions, then sends the draft in a separa
 
 ## History
 
-Every completed feedback request is saved automatically. Open the clock icon in the header to browse your recent sessions. Each session keeps the original draft and the rendered AI feedback; you can copy the feedback, restore the draft and focus, delete one session, or clear everything.
+Every completed feedback request is saved automatically. Open the clock icon in the header to browse your recent sessions. Each session keeps the original draft and the rendered AI feedback; you can copy the feedback, restore the draft and focus, delete one session, or clear everything. The plus icon on the feedback card starts a blank session without deleting anything from History.
 
 Up to 30 recent sessions are kept, and older or oversized entries are removed automatically. History lives only in this browser. If local storage is unavailable or full, the feedback still works but that session may not be saved.
 
