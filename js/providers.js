@@ -197,12 +197,12 @@ export const PROVIDERS = {
     id: "gemini",
     label: "Google Gemini",
     keyless: false,
-    defaultModel: "gemini-2.5-flash",
+    defaultModel: "gemini-3.5-flash-lite",
     description: "Google AI Studio includes a free tier for Gemini.",
     keyUrl: "https://aistudio.google.com/app/apikey",
     keyLinkLabel: "Get a free Gemini key",
     async *stream({ system, user, model, apiKey, signal }) {
-      const selectedModel = model || "gemini-2.5-flash";
+      const selectedModel = model || "gemini-3.5-flash-lite";
       const response = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(selectedModel)}:streamGenerateContent?alt=sse&key=${encodeURIComponent(apiKey)}`,
         {

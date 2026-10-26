@@ -18,7 +18,7 @@ A mobile-first writing feedback app. Paste a draft, pick a focus, and get struct
 | --- | --- | --- |
 | LLM7 | Not needed | Default. Free anonymous tier with fair-use rate limits. |
 | Groq | Free key | Fast free tier. Default model: `openai/gpt-oss-120b`. |
-| Google Gemini | Free key | Free tier from Google AI Studio. Default model: `gemini-2.5-flash`. |
+| Google Gemini | Free key | Free tier from Google AI Studio. Default model: `gemini-3.5-flash-lite`. |
 | OpenRouter | Free key | Uses `openrouter/free` to route to an available free model. |
 
 LLM7 needs no key. Open the settings dialog to choose another provider and paste a free key; links to each provider's key page are shown there. Model IDs can be overridden under **Advanced**.
