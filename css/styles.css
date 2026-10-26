@@ -737,6 +737,116 @@ svg {
   border-top: 1px solid var(--line);
 }
 
+.prose .table-wrap {
+  margin: 1em 0;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  -webkit-overflow-scrolling: touch;
+}
+
+.prose table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.84rem;
+  line-height: 1.55;
+}
+
+.prose .table-heading {
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--line-strong);
+  background: var(--field);
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-align: left;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.prose .table-cell {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+
+.prose tbody tr:last-child .table-cell {
+  border-bottom: 0;
+}
+
+.prose .align-center {
+  text-align: center;
+}
+
+.prose .align-right {
+  text-align: right;
+}
+
+@media (max-width: 640px) {
+  .prose .table-wrap {
+    overflow: visible;
+    border: 0;
+    border-radius: 0;
+    background: none;
+  }
+
+  .prose table,
+  .prose thead,
+  .prose tbody,
+  .prose tr,
+  .prose .table-heading,
+  .prose .table-cell {
+    display: block;
+    width: 100%;
+  }
+
+  .prose thead {
+    display: none;
+  }
+
+  .prose tbody tr {
+    margin: 0 0 10px;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--surface);
+  }
+
+  .prose tbody tr:last-child {
+    margin-bottom: 0;
+  }
+
+  .prose .table-cell {
+    display: grid;
+    grid-template-columns: minmax(76px, 30%) 1fr;
+    gap: 10px;
+    padding: 9px 12px;
+    border-bottom: 1px solid var(--line);
+    text-align: left;
+  }
+
+  .prose .table-cell:last-child {
+    border-bottom: 0;
+  }
+
+  .prose .table-cell::before {
+    content: attr(data-label);
+    color: var(--muted);
+    font-size: 0.62rem;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    line-height: 1.8;
+    text-transform: uppercase;
+  }
+
+  .prose .table-cell.align-center,
+  .prose .table-cell.align-right {
+    text-align: left;
+  }
+}
+
 .prose.is-streaming::after {
   content: "";
   display: inline-block;

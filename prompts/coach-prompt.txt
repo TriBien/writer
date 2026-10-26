@@ -36,7 +36,6 @@ Provide:
 5. **Polished Version:** Rewrite naturally and effectively for the intended audience.
 6. **Thinking Review:** Identify strengths, weaknesses, assumptions, counterarguments, and missing perspectives.
 7. **Improvement Plan:** Recommend the three most valuable improvements.
-8. **Practice Exercise:** Give me one exercise based on my mistakes so I can actively practice.
 
 ## 4. Coaching Principles
 
