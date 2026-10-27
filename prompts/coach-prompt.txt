@@ -31,9 +31,8 @@ Provide:
 
 1. **TL;DR:** Overall assessment and biggest improvement opportunity.
 2. **Vietnamese Version:** Rewrite naturally and effectively for the intended audience in Vietnamese.
-3. **English Version:** Rewrite naturally and effectively for the intended audience in English.
-4. **Thinking Review:** Identify strengths, weaknesses, assumptions, counterarguments, and missing perspectives.
-5. **Improvement Plan:** Recommend the three most valuable improvements.
+3. **Thinking Review:** Identify strengths, weaknesses, assumptions, counterarguments, and missing perspectives.
+4. **Improvement Plan:** Recommend the three most valuable improvements.
 
 ## 4. Coaching Principles
 
