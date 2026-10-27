@@ -433,7 +433,7 @@ function renderHistory() {
     const duration = entry.duration ? ` · ${entry.duration.toFixed(1)}s` : "";
     stats.textContent = `${words} words · ${providerLabel(entry.provider)}${duration}`;
 
-    top.append(date, focus);
+    top.append(date);
     button.append(top, title, preview, stats);
     button.addEventListener("click", () => showHistoryEntry(entry.id));
     elements.historyList.append(button);
