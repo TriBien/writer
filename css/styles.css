@@ -1596,6 +1596,53 @@ select.input {
   }
 }
 
+@media (max-width: 559px) {
+  .page {
+    display: flex;
+    flex-direction: column;
+    min-height: 100dvh;
+    padding-bottom: 0;
+  }
+
+  .topbar {
+    padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
+  }
+
+  main {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+  }
+
+  .composer {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
+    margin: 8px -16px 0;
+    padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
+    border-right: 0;
+    border-bottom: 0;
+    border-left: 0;
+    border-radius: 18px 18px 0 0;
+    box-shadow: none;
+  }
+
+  .editor-wrap {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+  }
+
+  .editor-wrap textarea {
+    flex: 1;
+    min-height: 0;
+    max-height: none;
+    height: 100%;
+    resize: none;
+  }
+}
+
 @media (max-width: 599px) {
   dialog {
     width: 100%;

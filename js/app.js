@@ -529,6 +529,11 @@ function updateWordCount() {
 }
 
 function autosizeDraft() {
+  if (window.matchMedia("(max-width: 559px)").matches) {
+    elements.draft.style.height = "";
+    return;
+  }
+
   elements.draft.style.height = "auto";
   const height = Math.min(Math.max(elements.draft.scrollHeight, 200), 460);
   elements.draft.style.height = `${height}px`;
