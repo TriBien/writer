@@ -6,12 +6,16 @@ const MAX_DRAFT_LENGTH = 20000;
 const MAX_PROMPT_LENGTH = 20000;
 const HISTORY_LIMIT = 100;
 const HISTORY_SIZE_LIMIT = 1000000;
+const GOOGLE_CLIENT_ID = "303971907183-7468lhojmuprdmov7ib4gnd1plinqm01.apps.googleusercontent.com";
+const GOOGLE_DRIVE_FILE_NAME = "writer.json";
 const STORAGE_KEYS = {
   draft: "draftwise:draft",
   settings: "draftwise:settings",
   defaultPrompt: "draftwise:defaultPrompt",
   history: "draftwise:history",
   storageMode: "draftwise:storageMode",
+  googleDriveFileId: "draftwise:googleDriveFileId",
+  googleDriveFileName: "draftwise:googleDriveFileName",
 };
 const DATA_FILE_FORMAT = "draftwise-data";
 
@@ -40,6 +44,9 @@ const elements = {
   storageMode: document.getElementById("storageMode"),
   storageStatus: document.getElementById("storageStatus"),
   chooseDataFile: document.getElementById("chooseDataFile"),
+  localFileActions: document.getElementById("localFileActions"),
+  googleDriveActions: document.getElementById("googleDriveActions"),
+  connectDriveFile: document.getElementById("connectDriveFile"),
   exportDataFile: document.getElementById("exportDataFile"),
   importDataFile: document.getElementById("importDataFile"),
   fontSizeInput: document.getElementById("fontSizeInput"),
@@ -84,8 +91,14 @@ const elements = {
 
 const state = {
   settings: loadSettings(),
-  storageMode: readStorage(STORAGE_KEYS.storageMode) === "file" ? "file" : "localStorage",
+  storageMode: ["file", "googleDrive"].includes(readStorage(STORAGE_KEYS.storageMode))
+    ? readStorage(STORAGE_KEYS.storageMode)
+    : "localStorage",
   dataFileHandle: null,
+  googleDriveFileId: readStorage(STORAGE_KEYS.googleDriveFileId),
+  googleDriveFileName: readStorage(STORAGE_KEYS.googleDriveFileName),
+  googleAccessToken: null,
+  googleApisPromise: null,
   fileWriteQueue: Promise.resolve(),
   controller: null,
   requestId: 0,
@@ -109,11 +122,15 @@ function readStorage(key) {
   }
 }
 
+function usesExternalStorage() {
+  return state.storageMode === "file" || state.storageMode === "googleDrive";
+}
+
 function writeStorage(key, value) {
   try {
     localStorage.setItem(key, value);
   } catch {
-    if (state.storageMode !== "file") {
+    if (!usesExternalStorage()) {
       return;
     }
   }
@@ -221,11 +238,11 @@ function writeHistory(entries) {
   while (list.length) {
     const payload = JSON.stringify(list);
 
-    if (payload.length <= HISTORY_SIZE_LIMIT || state.storageMode === "file") {
+    if (payload.length <= HISTORY_SIZE_LIMIT || usesExternalStorage()) {
       try {
         localStorage.setItem(STORAGE_KEYS.history, payload);
       } catch {
-        if (state.storageMode !== "file") {
+        if (!usesExternalStorage()) {
           list = list.slice(0, -1);
           continue;
         }
@@ -340,11 +357,25 @@ async function getStoredDataFileHandle() {
 }
 
 function scheduleFileSave() {
-  if (state.storageMode !== "file" || !state.dataFileHandle) {
+  if (
+    (state.storageMode === "file" && !state.dataFileHandle) ||
+    (state.storageMode === "googleDrive" && (!state.googleDriveFileId || !state.googleAccessToken))
+  ) {
     return;
   }
 
   state.fileWriteQueue = state.fileWriteQueue.then(async () => {
+    if (state.storageMode === "googleDrive") {
+      if (!state.googleDriveFileId || !state.googleAccessToken) {
+        return;
+      }
+
+      setStorageStatus("Saving changes to Google Drive…");
+      await uploadDriveFile(state.googleDriveFileId, state.googleAccessToken, getDataSnapshot());
+      setStorageStatus(`Google Drive · changes saved to ${state.googleDriveFileName}.`);
+      return;
+    }
+
     if (state.storageMode !== "file" || !state.dataFileHandle) {
       return;
     }
@@ -361,8 +392,229 @@ function scheduleFileSave() {
     }
   }).catch((error) => {
     setStorageStatus(`Could not save the data file: ${error.message}`);
-    showToast("Could not save to the data file. Check file access in Settings.");
+    showToast("Could not save the data file. Check storage access in Settings.");
   });
+}
+
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = src;
+    script.async = true;
+    script.onload = resolve;
+    script.onerror = () => {
+      script.remove();
+      reject(new Error("Could not load Google Drive support. Check your connection and try again."));
+    };
+    document.head.append(script);
+  });
+}
+
+async function loadGoogleApis() {
+  if (!state.googleApisPromise) {
+    state.googleApisPromise = loadScript("https://accounts.google.com/gsi/client").then(() => {
+      if (!window.google?.accounts?.oauth2) {
+        throw new Error("Google sign-in did not initialize correctly. Reload the page and try again.");
+      }
+    }).catch((error) => {
+      state.googleApisPromise = null;
+      throw error;
+    });
+  }
+
+  await state.googleApisPromise;
+}
+
+function requestGoogleAccessToken(onToken) {
+  const tokenClient = window.google.accounts.oauth2.initTokenClient({
+    client_id: GOOGLE_CLIENT_ID,
+    scope: "https://www.googleapis.com/auth/drive.file",
+    callback: async (response) => {
+      if (response.error || !response.access_token) {
+        state.googleAccessToken = null;
+        setStorageStatus(`Google sign-in failed: ${response.error_description || response.error || "No access token was returned."}`);
+        return;
+      }
+      state.googleAccessToken = response.access_token;
+      try {
+        await onToken(response.access_token);
+      } catch (error) {
+        setStorageStatus(`Google Drive error: ${error.message}`);
+        showToast("Could not access the Google Drive file.");
+      }
+    },
+  });
+  tokenClient.requestAccessToken({ prompt: "select_account" });
+}
+
+async function driveRequest(url, token, options = {}) {
+  const response = await fetch(url, {
+    ...options,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      ...options.headers,
+    },
+  });
+  if (!response.ok) {
+    let message = `Google Drive returned an error (${response.status}).`;
+    try {
+      const body = await response.json();
+      message = body.error?.message || message;
+    } catch {
+      // The response may not contain JSON.
+    }
+    if (response.status === 401) {
+      message = "Google Drive access expired. Reconnect the selected file in Settings.";
+      state.googleAccessToken = null;
+    }
+    throw new Error(message);
+  }
+  return response;
+}
+
+async function fetchDriveFile(fileId, token) {
+  const response = await driveRequest(
+    `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`,
+    token,
+  );
+  return response.text();
+}
+
+async function uploadDriveFile(fileId, token, data) {
+  await driveRequest(
+    `https://www.googleapis.com/upload/drive/v3/files/${encodeURIComponent(fileId)}?uploadType=media`,
+    token,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: `${JSON.stringify(data, null, 2)}\n`,
+    },
+  );
+}
+
+function activateGoogleDriveMode(file) {
+  state.storageMode = "googleDrive";
+  state.googleDriveFileId = file.id;
+  state.googleDriveFileName = file.name || "Draftwise data";
+  try {
+    localStorage.setItem(STORAGE_KEYS.storageMode, "googleDrive");
+    localStorage.setItem(STORAGE_KEYS.googleDriveFileId, state.googleDriveFileId);
+    localStorage.setItem(STORAGE_KEYS.googleDriveFileName, state.googleDriveFileName);
+  } catch {
+    setStorageStatus("Google Drive is connected for this tab, but the selection could not be remembered.");
+  }
+  elements.storageMode.value = "googleDrive";
+  updateStorageActions();
+}
+
+function updateStorageActions() {
+  elements.localFileActions.hidden = state.storageMode !== "file";
+  elements.googleDriveActions.hidden = state.storageMode !== "googleDrive";
+}
+
+async function connectSelectedDriveFile(token) {
+  if (!state.googleDriveFileId) {
+    setStorageStatus("Choose a Google Drive file to connect first.");
+    return;
+  }
+
+  let imported;
+  try {
+    const content = await fetchDriveFile(state.googleDriveFileId, token);
+    imported = content.trim() ? parseDataSnapshot(content) : null;
+  } catch (error) {
+    state.googleAccessToken = null;
+    throw error;
+  }
+  if (imported && !window.confirm("Load the contents of this Google Drive file? It will replace the data currently shown in Draftwise.")) {
+    state.googleAccessToken = null;
+    setStorageStatus("Google Drive file not loaded. Reconnect and confirm to resume syncing.");
+    return;
+  }
+  if (imported) {
+    applyDataSnapshot(imported);
+  }
+  activateGoogleDriveMode({ id: state.googleDriveFileId, name: state.googleDriveFileName });
+  setStorageStatus(`Google Drive · saving changes to ${state.googleDriveFileName}.`);
+  scheduleFileSave();
+}
+
+async function connectDriveFile() {
+  if (!window.google?.accounts?.oauth2) {
+    setStorageStatus("Google sign-in is still loading. Try again shortly.");
+    prepareGoogleSignIn();
+    return;
+  }
+  requestGoogleAccessToken(connectOrCreateDriveFile);
+}
+
+function prepareGoogleSignIn() {
+  elements.connectDriveFile.disabled = true;
+  loadGoogleApis().then(() => {
+    elements.connectDriveFile.disabled = false;
+    if (state.storageMode === "googleDrive") {
+      setStorageStatus("Google sign-in is ready. Sign in to connect writer.json.");
+    }
+  }).catch((error) => {
+    elements.connectDriveFile.disabled = false;
+    if (state.storageMode === "googleDrive") {
+      setStorageStatus(error.message);
+    }
+  });
+}
+
+async function findGoogleDriveFile(token) {
+  const query = new URLSearchParams({
+    q: `name = '${GOOGLE_DRIVE_FILE_NAME}' and mimeType = 'application/json' and trashed = false`,
+    fields: "files(id,name,mimeType,modifiedTime)",
+    orderBy: "modifiedTime desc",
+    pageSize: "1",
+  });
+  const response = await driveRequest(`https://www.googleapis.com/drive/v3/files?${query}`, token);
+  const { files } = await response.json();
+  return files?.[0] || null;
+}
+
+async function createGoogleDriveFile(token) {
+  const boundary = `writer_${createHistoryId().replace(/-/g, "")}`;
+  const metadata = { name: GOOGLE_DRIVE_FILE_NAME, mimeType: "application/json" };
+  const body = [
+    `--${boundary}`,
+    "Content-Type: application/json; charset=UTF-8",
+    "",
+    JSON.stringify(metadata),
+    `--${boundary}`,
+    "Content-Type: application/json; charset=UTF-8",
+    "",
+    `${JSON.stringify(getDataSnapshot(), null, 2)}\n`,
+    `--${boundary}--`,
+    "",
+  ].join("\r\n");
+  const response = await driveRequest(
+    "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name",
+    token,
+    {
+      method: "POST",
+      headers: { "Content-Type": `multipart/related; boundary=${boundary}` },
+      body,
+    },
+  );
+  const file = await response.json();
+  activateGoogleDriveMode(file);
+  setStorageStatus(`Google Drive · changes saved to ${state.googleDriveFileName}.`);
+  showToast(`${GOOGLE_DRIVE_FILE_NAME} created in Google Drive`);
+}
+
+async function connectOrCreateDriveFile(token) {
+  const file = await findGoogleDriveFile(token);
+  if (!file) {
+    await createGoogleDriveFile(token);
+    return;
+  }
+
+  state.googleDriveFileId = file.id;
+  state.googleDriveFileName = file.name;
+  await connectSelectedDriveFile(token);
 }
 
 function downloadDataFile() {
@@ -386,12 +638,13 @@ function activateFileMode() {
     // The current selection still applies for this page session.
   }
   elements.storageMode.value = "file";
+  updateStorageActions();
 }
 
 async function chooseDataFile() {
   if (!window.showSaveFilePicker) {
+    activateFileMode();
     elements.importDataFile.click();
-    elements.storageMode.value = state.storageMode;
     setStorageStatus("Choose a saved file to import, or download a new backup. Saving overwrites from this browser is not available here.");
     return;
   }
@@ -433,6 +686,16 @@ async function chooseDataFile() {
 }
 
 async function restoreFileMode() {
+  updateStorageActions();
+  if (state.storageMode === "googleDrive") {
+    elements.storageMode.value = "googleDrive";
+    setStorageStatus(state.googleDriveFileId
+    ? `Google Drive · sign in to load ${state.googleDriveFileName} and continue saving.`
+    : `Google Drive · sign in to find or create ${GOOGLE_DRIVE_FILE_NAME}.`);
+    prepareGoogleSignIn();
+    return;
+  }
+
   if (state.storageMode !== "file") {
     elements.storageMode.value = "localStorage";
     setStorageStatus("Your drafts, settings, prompt, and history are saved in this browser.");
@@ -858,7 +1121,7 @@ function deleteHistoryEntry() {
     try {
       localStorage.removeItem(STORAGE_KEYS.history);
     } catch {
-      if (state.storageMode !== "file") {
+      if (!usesExternalStorage()) {
         showToast("Could not update history.");
         return;
       }
@@ -887,7 +1150,7 @@ function clearAllHistory() {
   try {
     localStorage.removeItem(STORAGE_KEYS.history);
   } catch {
-    if (state.storageMode !== "file") {
+    if (!usesExternalStorage()) {
       showToast("Could not clear history.");
       return;
     }
@@ -1449,15 +1712,24 @@ function bindEvents() {
       return;
     }
 
-    state.storageMode = "localStorage";
+    state.storageMode = elements.storageMode.value === "googleDrive" ? "googleDrive" : "localStorage";
     try {
-      localStorage.setItem(STORAGE_KEYS.storageMode, "localStorage");
+      localStorage.setItem(STORAGE_KEYS.storageMode, state.storageMode);
     } catch {
       showToast("Could not save the storage preference.");
     }
-    setStorageStatus("Your drafts, settings, prompt, and history are saved in this browser.");
+    updateStorageActions();
+    if (state.storageMode === "googleDrive") {
+      setStorageStatus(state.googleDriveFileId
+        ? `Google Drive · sign in to load ${state.googleDriveFileName} and continue saving.`
+        : `Google Drive · sign in to find or create ${GOOGLE_DRIVE_FILE_NAME}.`);
+      prepareGoogleSignIn();
+    } else {
+      setStorageStatus("Your drafts, settings, prompt, and history are saved in this browser.");
+    }
   });
   elements.chooseDataFile.addEventListener("click", chooseDataFile);
+  elements.connectDriveFile.addEventListener("click", connectDriveFile);
   elements.exportDataFile.addEventListener("click", downloadDataFile);
   elements.importDataFile.addEventListener("change", async () => {
     const [file] = elements.importDataFile.files || [];

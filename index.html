@@ -137,13 +137,18 @@
         <select id="storageMode" class="input">
           <option value="localStorage">This browser (default)</option>
           <option value="file">Text file</option>
+          <option value="googleDrive">Google Drive text file</option>
         </select>
         <p id="storageStatus" class="field-help">Your drafts, settings, prompt, and history are saved in this browser.</p>
-        <div class="storage-actions">
+        <div id="localFileActions" class="storage-actions" hidden>
           <button type="button" id="chooseDataFile" class="secondary-button small">Choose data file</button>
           <button type="button" id="exportDataFile" class="text-button">Download data file</button>
           <label class="text-button storage-import" for="importDataFile">Import data file</label>
           <input id="importDataFile" type="file" accept=".json,.txt,application/json,text/plain" hidden>
+        </div>
+        <div id="googleDriveActions" class="storage-actions drive-actions" hidden>
+          <button type="button" id="connectDriveFile" class="secondary-button small">Sign in &amp; connect writer.json</button>
+          <span id="driveFileName" class="field-help">Finds this app's writer.json in your Drive, or creates it.</span>
         </div>
 
         <div class="font-size-setting">

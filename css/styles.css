@@ -1119,6 +1119,10 @@ select.input {
   cursor: pointer;
 }
 
+.drive-actions {
+  margin-bottom: 12px;
+}
+
 .font-size-setting {
   margin: 18px 0;
 }
