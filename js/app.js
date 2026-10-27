@@ -1,4 +1,4 @@
-import { FOCUS_OPTIONS, SAMPLE_DRAFT, buildPrompt, loadDefaultPrompt } from "./prompt.js";
+import { SAMPLE_DRAFT, buildPrompt, loadDefaultPrompt } from "./prompt.js";
 import { PROVIDERS, PROVIDER_LIST } from "./providers.js";
 import { renderMarkdown } from "./markdown.js";
 
@@ -8,7 +8,6 @@ const HISTORY_LIMIT = 100;
 const HISTORY_SIZE_LIMIT = 1000000;
 const STORAGE_KEYS = {
   draft: "draftwise:draft",
-  focus: "draftwise:focus",
   settings: "draftwise:settings",
   defaultPrompt: "draftwise:defaultPrompt",
   history: "draftwise:history",
@@ -18,7 +17,6 @@ const elements = {
   form: document.getElementById("feedbackForm"),
   draft: document.getElementById("draft"),
   wordCount: document.getElementById("wordCount"),
-  focusChips: document.getElementById("focusChips"),
   formError: document.getElementById("formError"),
   submitButton: document.getElementById("submitButton"),
   submitLabel: document.querySelector("#submitButton .button-label"),
@@ -77,7 +75,6 @@ const elements = {
 
 const state = {
   settings: loadSettings(),
-  focus: loadFocus(),
   controller: null,
   requestId: 0,
   output: "",
@@ -132,11 +129,6 @@ function saveSettings() {
   writeStorage(STORAGE_KEYS.settings, JSON.stringify(state.settings));
 }
 
-function loadFocus() {
-  const stored = readStorage(STORAGE_KEYS.focus);
-  return FOCUS_OPTIONS.some((option) => option.id === stored) ? stored : "general";
-}
-
 function createHistoryId() {
   if (globalThis.crypto?.randomUUID) {
     return globalThis.crypto.randomUUID();
@@ -165,7 +157,6 @@ function normalizeHistoryEntry(entry) {
     createdAt: Number.isFinite(createdAt) ? createdAt : Date.now(),
     draft,
     output,
-    focusId: FOCUS_OPTIONS.some((option) => option.id === entry.focusId) ? entry.focusId : "general",
     provider: typeof entry.provider === "string" ? entry.provider : "pollinations",
     model: typeof entry.model === "string" ? entry.model : "",
     duration: Number.isFinite(duration) && duration > 0 ? duration : null,
@@ -213,10 +204,6 @@ function writeHistory(entries) {
 function countWords(text) {
   const trimmed = text.trim();
   return trimmed ? trimmed.split(/\s+/).length : 0;
-}
-
-function focusLabel(focusId) {
-  return (FOCUS_OPTIONS.find((option) => option.id === focusId) || FOCUS_OPTIONS[0]).label;
 }
 
 function providerLabel(providerId) {
@@ -305,34 +292,6 @@ function announce(message) {
   elements.srStatus.textContent = "";
   window.requestAnimationFrame(() => {
     elements.srStatus.textContent = message;
-  });
-}
-
-function buildFocusChips() {
-  elements.focusChips.replaceChildren();
-
-  FOCUS_OPTIONS.forEach((option) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "chip";
-    button.dataset.focus = option.id;
-    button.textContent = option.label;
-    button.setAttribute("role", "radio");
-    button.setAttribute("aria-checked", String(option.id === state.focus));
-    button.tabIndex = option.id === state.focus ? 0 : -1;
-    button.addEventListener("click", () => selectFocus(option.id));
-    elements.focusChips.append(button);
-  });
-}
-
-function selectFocus(focusId) {
-  state.focus = focusId;
-  writeStorage(STORAGE_KEYS.focus, focusId);
-
-  elements.focusChips.querySelectorAll(".chip").forEach((chip) => {
-    const selected = chip.dataset.focus === focusId;
-    chip.setAttribute("aria-checked", String(selected));
-    chip.tabIndex = selected ? 0 : -1;
   });
 }
 
@@ -460,10 +419,6 @@ function renderHistory() {
     date.className = "history-date";
     date.textContent = formatSessionDate(entry.createdAt);
 
-    const focus = document.createElement("span");
-    focus.className = "history-focus";
-    focus.textContent = focusLabel(entry.focusId);
-
     const title = document.createElement("span");
     title.className = "history-title";
     title.textContent = sessionTitle(entry.draft);
@@ -551,7 +506,6 @@ function saveHistoryEntry({ draft, focusId, providerId, model, duration }) {
     createdAt: Date.now(),
     draft,
     output,
-    focusId,
     provider: providerId,
     model,
     duration,
@@ -593,7 +547,6 @@ function restoreHistoryDraft() {
   elements.draft.value = entry.draft;
   elements.draft.dispatchEvent(new Event("input", { bubbles: true }));
   writeStorage(STORAGE_KEYS.draft, entry.draft);
-  selectFocus(entry.focusId);
   elements.historyDialog.close();
 
   const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -909,8 +862,7 @@ async function submitFeedback(event) {
   const requestId = ++state.requestId;
   const controller = new AbortController();
   const model = providerModel(provider.id);
-  const focusId = state.focus;
-  const prompt = buildPrompt(promptTemplate, text, focusId);
+  const prompt = buildPrompt(promptTemplate, text);
   const startedAt = performance.now();
 
   state.controller = controller;
@@ -952,7 +904,6 @@ async function submitFeedback(event) {
     const duration = finishResult(startedAt, provider, model);
     saveHistoryEntry({
       draft: text,
-      focusId,
       providerId: provider.id,
       model,
       duration,
@@ -1160,20 +1111,6 @@ function bindEvents() {
     }
   });
 
-  elements.focusChips.addEventListener("keydown", (event) => {
-    const keys = ["ArrowRight", "ArrowDown", "ArrowLeft", "ArrowUp"];
-    if (!keys.includes(event.key)) {
-      return;
-    }
-
-    event.preventDefault();
-    const index = FOCUS_OPTIONS.findIndex((option) => option.id === state.focus);
-    const direction = event.key === "ArrowRight" || event.key === "ArrowDown" ? 1 : -1;
-    const next = FOCUS_OPTIONS[(index + direction + FOCUS_OPTIONS.length) % FOCUS_OPTIONS.length];
-    selectFocus(next.id);
-    elements.focusChips.querySelector(`[data-focus="${next.id}"]`)?.focus();
-  });
-
   elements.sampleButton.addEventListener("click", () => {
     elements.draft.value = SAMPLE_DRAFT;
     elements.draft.dispatchEvent(new Event("input", { bubbles: true }));
@@ -1271,7 +1208,6 @@ function init() {
   elements.draft.value = readStorage(STORAGE_KEYS.draft) || "";
   updateWordCount();
   autosizeDraft();
-  buildFocusChips();
   updateProviderLine();
   updatePromptStatus();
   updateHistoryBadge();

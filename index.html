@@ -4,10 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Draftwise — Better feedback for your writing</title>
-  <meta name="description" content="Paste an English or Vietnamese draft and get focused, actionable feedback from a free AI writing coach. No account, no backend.">
+  <meta name="description" content="Paste an English or Vietnamese draft, actionable feedback from a free AI writing coach. No account, no backend.">
   <meta name="theme-color" content="#f5f1e8">
   <meta property="og:title" content="Draftwise — Better feedback for your writing">
-  <meta property="og:description" content="Paste an English or Vietnamese draft and get focused, actionable feedback from a free AI writing coach.">
+  <meta property="og:description" content="Paste an English or Vietnamese draft, actionable feedback from a free AI writing coach.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://tribien.github.io/writer/">
   <meta name="twitter:card" content="summary">
@@ -45,12 +45,6 @@
     </header>
 
     <main>
-      <!-- <section class="hero">
-        <p class="kicker">A second pair of eyes</p>
-        <h1>Make your writing <em>clearer.</em></h1>
-        <p class="lede">Paste an English or Vietnamese draft. Get specific, honest feedback — then revise with confidence.</p>
-      </section> -->
-
       <form id="feedbackForm" class="card composer" novalidate>
         <div class="field-head">
           <label for="draft">Your draft</label>
@@ -62,11 +56,6 @@
 
         <div class="editor-wrap">
           <textarea id="draft" name="draft" placeholder="Paste or write your draft here…" spellcheck="true" autocomplete="off" aria-describedby="draftHelp"></textarea>
-        </div>
-
-        <div class="focus-row">
-          <span class="field-label" id="focusLabel">Focus</span>
-          <div id="focusChips" class="chips" role="radiogroup" aria-labelledby="focusLabel"></div>
         </div>
 
         <div class="prompt-line">
@@ -90,21 +79,12 @@
             <span class="spinner" aria-hidden="true"></span>
           </button>
         </div>
-
-        <p class="privacy-note" id="draftHelp">
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <rect x="4" y="10" width="16" height="11" rx="2"></rect>
-            <path d="M8 10V7a4 4 0 0 1 8 0v3"></path>
-          </svg>
-          <span>Your draft goes only to the AI provider you choose. Saved sessions stay in this browser.</span>
-        </p>
       </form>
 
       <section id="resultCard" class="card result" hidden>
         <div class="result-head">
           <div>
             <p class="eyebrow">Writing coach</p>
-            <h2>Feedback</h2>
           </div>
           <div class="result-tools">
             <button type="button" id="newSessionButton" class="icon-button subtle" aria-label="Start a new writing session" title="New session" hidden>
@@ -135,11 +115,6 @@
         </div>
       </section>
     </main>
-
-    <footer class="footer">
-      <p>Built with free LLM APIs. Your words stay yours.</p>
-      <p><a href="https://github.com/TriBien/writer" target="_blank" rel="noopener">View the source on GitHub</a></p>
-    </footer>
   </div>
 
   <dialog id="settingsDialog" aria-labelledby="settingsTitle">
@@ -217,7 +192,7 @@
         <label class="field-label" for="promptInput">Prompt sent to the model</label>
         <textarea id="promptInput" class="input prompt-input" spellcheck="true" aria-describedby="promptHelp"></textarea>
         <p class="field-help" id="promptHelp">
-          The placeholder <code>[Paste my Vietnamese or English writing here]</code> is replaced with a brief note. Your draft is sent separately inside <code>&lt;draft&gt;</code> tags, and your selected focus is appended as an extra instruction.
+          The placeholder <code>[Paste my Vietnamese or English writing here]</code> is replaced with a brief note. Your draft is sent separately inside <code>&lt;draft&gt;</code>
         </p>
 
         <div id="promptError" class="form-error" role="alert" hidden></div>

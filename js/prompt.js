@@ -1,35 +1,3 @@
-export const FOCUS_OPTIONS = [
-  {
-    id: "general",
-    label: "General",
-    instruction: "balanced overall feedback on whatever matters most",
-  },
-  {
-    id: "clarity",
-    label: "Clarity",
-    instruction: "clarity, readability, sentence flow, and word choice",
-  },
-  {
-    id: "structure",
-    label: "Structure",
-    instruction: "organization, paragraph breaks, openings, transitions, and endings",
-  },
-  {
-    id: "grammar",
-    label: "Grammar",
-    instruction: "grammar, punctuation, spelling, and sentence mechanics",
-  },
-  {
-    id: "tone",
-    label: "Tone",
-    instruction: "tone, voice, and fit for the writer's intended audience",
-  },
-  {
-    id: "concision",
-    label: "Concision",
-    instruction: "tightening the prose and cutting words that do not earn their place",
-  },
-];
 
 export const DRAFT_PLACEHOLDER = "[Paste my Vietnamese or English writing here]";
 const DRAFT_NOTE = "[The writer's draft is provided in the next message.]";
@@ -50,14 +18,11 @@ export async function loadDefaultPrompt() {
   return text;
 }
 
-export function buildPrompt(template, text, focusId) {
-  const focus = FOCUS_OPTIONS.find((option) => option.id === focusId) || FOCUS_OPTIONS[0];
+export function buildPrompt(template, text) {
   const instructions = template.trim().replaceAll(DRAFT_PLACEHOLDER, DRAFT_NOTE);
 
   return {
     system: `${instructions}
-
-Chosen focus: ${focus.instruction}. Let this focus guide what you prioritize while following the instructions above.
 
 Format with Markdown headings, bullet lists, short paragraphs, and tables when comparing items. Do not use HTML.
 
