@@ -64,7 +64,7 @@ body {
   margin: 0;
   min-height: 100dvh;
   font-family: var(--font-sans);
-  font-size: 16px;
+  font-size: 18px;
   line-height: 1.5;
   color: var(--ink);
   background:
@@ -135,7 +135,7 @@ svg {
 
 .page {
   position: relative;
-  width: min(100%, 820px);
+  width: min(100%, 1200px);
   margin: 0 auto;
   padding: 0 16px calc(32px + env(safe-area-inset-bottom));
 }
@@ -156,7 +156,7 @@ svg {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  width: min(100%, 788px);
+  width: min(100%, 1200px);
   margin: 0 auto;
 }
 
@@ -361,7 +361,7 @@ svg {
   display: block;
   width: 100%;
   min-height: 200px;
-  max-height: 460px;
+  max-height: 800px;
   padding: 16px;
   border: 1px solid var(--line);
   border-radius: 16px;
