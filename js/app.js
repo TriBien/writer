@@ -477,7 +477,7 @@ function showHistoryEntry(entryId) {
   const duration = entry.duration ? ` · ${entry.duration.toFixed(1)}s` : "";
   const words = countWords(entry.draft).toLocaleString();
   elements.historyDetailMeta.textContent =
-    `${formatSessionDate(entry.createdAt)} · ${words} words · ${focusLabel(entry.focusId)} · ${providerLabel(entry.provider)}${duration}`;
+    `${formatSessionDate(entry.createdAt)} · ${words} words · ${providerLabel(entry.provider)}${duration}`;
   elements.historyDetailMeta.title = entry.model || "";
   elements.historyDraft.textContent = entry.draft;
   elements.historyFeedback.innerHTML = renderMarkdown(entry.output);
@@ -495,7 +495,7 @@ function openHistory() {
   }
 }
 
-function saveHistoryEntry({ draft, focusId, providerId, model, duration }) {
+function saveHistoryEntry({ draft, providerId, model, duration }) {
   const output = state.output.trim();
   if (!draft.trim() || !output) {
     return;
