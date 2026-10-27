@@ -42,6 +42,8 @@ const elements = {
   chooseDataFile: document.getElementById("chooseDataFile"),
   exportDataFile: document.getElementById("exportDataFile"),
   importDataFile: document.getElementById("importDataFile"),
+  fontSizeInput: document.getElementById("fontSizeInput"),
+  fontSizeValue: document.getElementById("fontSizeValue"),
   providerSelect: document.getElementById("providerSelect"),
   providerHelp: document.getElementById("providerHelp"),
   keyField: document.getElementById("keyField"),
@@ -122,7 +124,7 @@ function writeStorage(key, value) {
 }
 
 function normalizeSettings(stored) {
-  const fallback = { provider: "pollinations", keys: {}, models: {}, prompt: "" };
+  const fallback = { provider: "pollinations", keys: {}, models: {}, prompt: "", fontSize: 17 };
 
   if (!stored || typeof stored !== "object" || Array.isArray(stored)) {
     return fallback;
@@ -139,6 +141,7 @@ function normalizeSettings(stored) {
         .filter(([, value]) => typeof value === "string"),
     ),
     prompt: typeof stored.prompt === "string" ? stored.prompt : "",
+    fontSize: Number.isFinite(stored.fontSize) ? Math.min(Math.max(stored.fontSize, 14), 24) : 17,
   };
 }
 
@@ -152,6 +155,13 @@ function loadSettings() {
 
 function saveSettings() {
   writeStorage(STORAGE_KEYS.settings, JSON.stringify(state.settings));
+}
+
+function applyReadingFontSize(fontSize = state.settings.fontSize) {
+  document.documentElement.style.setProperty("--reading-font-scale", String(fontSize / 17));
+  elements.fontSizeInput.value = String(fontSize);
+  elements.fontSizeValue.value = `${fontSize} px`;
+  elements.fontSizeValue.textContent = `${fontSize} px`;
 }
 
 function createHistoryId() {
@@ -290,6 +300,7 @@ function applyDataSnapshot(data) {
   updateProviderLine();
   updatePromptStatus();
   updateHistoryBadge();
+  applyReadingFontSize();
 }
 
 function setStorageStatus(message) {
@@ -1322,6 +1333,9 @@ function openSettings(options = {}) {
     models: { ...state.settings.models },
   };
 
+  elements.fontSizeInput.value = String(state.settings.fontSize);
+  elements.fontSizeValue.value = `${state.settings.fontSize} px`;
+  elements.fontSizeValue.textContent = `${state.settings.fontSize} px`;
   elements.providerSelect.value = state.settingsDraft.provider;
   populateProviderFields(state.settingsDraft.provider);
   setSettingsError(options.message || "");
@@ -1353,7 +1367,9 @@ function saveProviderSettings(event) {
   state.settings.provider = providerId;
   state.settings.keys = { ...state.settingsDraft.keys };
   state.settings.models = { ...state.settingsDraft.models };
+  state.settings.fontSize = Number(elements.fontSizeInput.value);
   saveSettings();
+  applyReadingFontSize();
   updateProviderLine();
   elements.settingsDialog.close();
   showToast("Settings saved");
@@ -1416,6 +1432,12 @@ function bindEvents() {
 
   elements.settingsButton.addEventListener("click", () => openSettings());
   elements.providerButton.addEventListener("click", () => openSettings());
+  elements.fontSizeInput.addEventListener("input", () => {
+    const fontSize = Number(elements.fontSizeInput.value);
+    applyReadingFontSize(fontSize);
+    elements.fontSizeValue.value = `${fontSize} px`;
+    elements.fontSizeValue.textContent = `${fontSize} px`;
+  });
   elements.storageMode.addEventListener("change", () => {
     if (elements.storageMode.value === "file") {
       chooseDataFile();
@@ -1454,6 +1476,7 @@ function bindEvents() {
 
   elements.closeSettings.addEventListener("click", () => elements.settingsDialog.close());
   elements.cancelSettings.addEventListener("click", () => elements.settingsDialog.close());
+  elements.settingsDialog.addEventListener("close", () => applyReadingFontSize());
 
   elements.settingsDialog.addEventListener("click", (event) => {
     if (event.target === elements.settingsDialog) {
@@ -1498,6 +1521,7 @@ function init() {
   elements.draft.value = readStorage(STORAGE_KEYS.draft) || "";
   updateWordCount();
   autosizeDraft();
+  applyReadingFontSize();
   updateProviderLine();
   updatePromptStatus();
   updateHistoryBadge();

@@ -11,6 +11,7 @@ A mobile-first writing feedback app. Paste a draft, pick a focus, and get struct
 - Streams back a TL;DR, scorecard, corrections, corrected and polished versions, a thinking review, an improvement plan, and a practice exercise.
 - Renders comparison tables as clean tables on desktop and stacked label/value cards on mobile.
 - Lets you edit the coach prompt in the browser and restore the default at any time.
+- Lets you adjust the draft and feedback font size in Settings.
 - Saves completed sessions so you can reopen the draft and the AI feedback later.
 - Keeps drafts, preferences, and up to 100 recent sessions in browser storage by default, with an optional text-file storage mode.
 - Works as a static site on GitHub Pages.

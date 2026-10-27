@@ -146,6 +146,15 @@
           <input id="importDataFile" type="file" accept=".json,.txt,application/json,text/plain" hidden>
         </div>
 
+        <div class="font-size-setting">
+          <div class="font-size-label">
+            <label class="field-label" for="fontSizeInput">Reading font size</label>
+            <output id="fontSizeValue" for="fontSizeInput">17 px</output>
+          </div>
+          <input id="fontSizeInput" class="font-size-input" type="range" min="14" max="24" step="1" value="17">
+          <p class="field-help">Adjusts the draft editor and feedback text.</p>
+        </div>
+
         <label class="field-label" for="providerSelect">Provider</label>
         <select id="providerSelect" class="input"></select>
         <p id="providerHelp" class="field-help"></p>
