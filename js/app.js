@@ -1708,7 +1708,9 @@ function bindEvents() {
   });
   elements.storageMode.addEventListener("change", () => {
     if (elements.storageMode.value === "file") {
-      chooseDataFile();
+      // chooseDataFile();
+      state.storageMode = "file";
+      updateStorageActions();
       return;
     }
 
