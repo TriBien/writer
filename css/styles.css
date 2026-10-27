@@ -1100,6 +1100,24 @@ select.input {
   cursor: pointer;
 }
 
+.storage-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  margin-top: 10px;
+}
+
+.secondary-button.small {
+  height: 36px;
+  padding: 0 12px;
+  font-size: 0.78rem;
+}
+
+.storage-import {
+  cursor: pointer;
+}
+
 .field-help {
   margin: 7px 1px 0;
   color: var(--muted);

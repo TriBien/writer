@@ -11,7 +11,9 @@ const STORAGE_KEYS = {
   settings: "draftwise:settings",
   defaultPrompt: "draftwise:defaultPrompt",
   history: "draftwise:history",
+  storageMode: "draftwise:storageMode",
 };
+const DATA_FILE_FORMAT = "draftwise-data";
 
 const elements = {
   form: document.getElementById("feedbackForm"),
@@ -35,6 +37,11 @@ const elements = {
   settingsDialog: document.getElementById("settingsDialog"),
   settingsForm: document.getElementById("settingsForm"),
   settingsError: document.getElementById("settingsError"),
+  storageMode: document.getElementById("storageMode"),
+  storageStatus: document.getElementById("storageStatus"),
+  chooseDataFile: document.getElementById("chooseDataFile"),
+  exportDataFile: document.getElementById("exportDataFile"),
+  importDataFile: document.getElementById("importDataFile"),
   providerSelect: document.getElementById("providerSelect"),
   providerHelp: document.getElementById("providerHelp"),
   keyField: document.getElementById("keyField"),
@@ -75,6 +82,9 @@ const elements = {
 
 const state = {
   settings: loadSettings(),
+  storageMode: readStorage(STORAGE_KEYS.storageMode) === "file" ? "file" : "localStorage",
+  dataFileHandle: null,
+  fileWriteQueue: Promise.resolve(),
   controller: null,
   requestId: 0,
   output: "",
@@ -101,27 +111,42 @@ function writeStorage(key, value) {
   try {
     localStorage.setItem(key, value);
   } catch {
-    return;
+    if (state.storageMode !== "file") {
+      return;
+    }
+  }
+
+  if (key !== STORAGE_KEYS.storageMode) {
+    scheduleFileSave();
   }
 }
 
-function loadSettings() {
+function normalizeSettings(stored) {
   const fallback = { provider: "pollinations", keys: {}, models: {}, prompt: "" };
 
-  try {
-    const stored = JSON.parse(readStorage(STORAGE_KEYS.settings) || "null");
-    if (!stored || typeof stored !== "object") {
-      return fallback;
-    }
-
-    return {
-      provider: PROVIDERS[stored.provider] ? stored.provider : "pollinations",
-      keys: stored.keys && typeof stored.keys === "object" ? stored.keys : {},
-      models: stored.models && typeof stored.models === "object" ? stored.models : {},
-      prompt: typeof stored.prompt === "string" ? stored.prompt : "",
-    };
-  } catch {
+  if (!stored || typeof stored !== "object" || Array.isArray(stored)) {
     return fallback;
+  }
+
+  return {
+    provider: PROVIDERS[stored.provider] ? stored.provider : "pollinations",
+    keys: Object.fromEntries(
+      Object.entries(stored.keys && typeof stored.keys === "object" && !Array.isArray(stored.keys) ? stored.keys : {})
+        .filter(([, value]) => typeof value === "string"),
+    ),
+    models: Object.fromEntries(
+      Object.entries(stored.models && typeof stored.models === "object" && !Array.isArray(stored.models) ? stored.models : {})
+        .filter(([, value]) => typeof value === "string"),
+    ),
+    prompt: typeof stored.prompt === "string" ? stored.prompt : "",
+  };
+}
+
+function loadSettings() {
+  try {
+    return normalizeSettings(JSON.parse(readStorage(STORAGE_KEYS.settings) || "null"));
+  } catch {
+    return normalizeSettings(null);
   }
 }
 
@@ -186,19 +211,255 @@ function writeHistory(entries) {
   while (list.length) {
     const payload = JSON.stringify(list);
 
-    if (payload.length <= HISTORY_SIZE_LIMIT) {
+    if (payload.length <= HISTORY_SIZE_LIMIT || state.storageMode === "file") {
       try {
         localStorage.setItem(STORAGE_KEYS.history, payload);
-        return list;
       } catch {
-        // Try again with the oldest session removed.
+        if (state.storageMode !== "file") {
+          list = list.slice(0, -1);
+          continue;
+        }
       }
+      scheduleFileSave();
+      return list;
     }
 
     list = list.slice(0, -1);
   }
 
   return null;
+}
+
+function getDataSnapshot() {
+  return {
+    format: DATA_FILE_FORMAT,
+    version: 1,
+    savedAt: new Date().toISOString(),
+    draft: elements.draft.value,
+    settings: state.settings,
+    defaultPrompt: state.defaultPrompt || readStorage(STORAGE_KEYS.defaultPrompt) || "",
+    history: state.history,
+  };
+}
+
+function parseDataSnapshot(text) {
+  const data = JSON.parse(text);
+  if (
+    !data ||
+    data.format !== DATA_FILE_FORMAT ||
+    data.version !== 1 ||
+    typeof data.draft !== "string" ||
+    !Array.isArray(data.history)
+  ) {
+    throw new Error("This is not a valid Draftwise data file.");
+  }
+
+  if (data.draft.length > MAX_DRAFT_LENGTH) {
+    throw new Error(`The data file contains a draft longer than ${MAX_DRAFT_LENGTH.toLocaleString()} characters.`);
+  }
+
+  return {
+    draft: data.draft,
+    settings: normalizeSettings(data.settings),
+    defaultPrompt: typeof data.defaultPrompt === "string" ? data.defaultPrompt : "",
+    history: data.history
+      .map(normalizeHistoryEntry)
+      .filter(Boolean)
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .slice(0, HISTORY_LIMIT),
+  };
+}
+
+function applyDataSnapshot(data) {
+  state.settings = data.settings;
+  state.history = data.history;
+  state.defaultPrompt = data.defaultPrompt;
+  elements.draft.value = data.draft;
+
+  try {
+    localStorage.setItem(STORAGE_KEYS.draft, data.draft);
+    localStorage.setItem(STORAGE_KEYS.settings, JSON.stringify(state.settings));
+    localStorage.setItem(STORAGE_KEYS.defaultPrompt, state.defaultPrompt);
+    localStorage.setItem(STORAGE_KEYS.history, JSON.stringify(state.history));
+  } catch {
+    // The selected file remains the durable copy when browser storage is unavailable.
+  }
+
+  updateWordCount();
+  autosizeDraft();
+  updateProviderLine();
+  updatePromptStatus();
+  updateHistoryBadge();
+}
+
+function setStorageStatus(message) {
+  elements.storageStatus.textContent = message;
+}
+
+function openHandleDatabase() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open("draftwise-storage", 1);
+    request.onupgradeneeded = () => request.result.createObjectStore("handles");
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error("Could not open browser file settings."));
+  });
+}
+
+async function storeDataFileHandle(handle) {
+  const database = await openHandleDatabase();
+  await new Promise((resolve, reject) => {
+    const transaction = database.transaction("handles", "readwrite");
+    transaction.objectStore("handles").put(handle, "dataFile");
+    transaction.oncomplete = resolve;
+    transaction.onerror = () => reject(transaction.error || new Error("Could not remember the selected data file."));
+    transaction.onabort = () => reject(transaction.error || new Error("Could not remember the selected data file."));
+  });
+  database.close();
+}
+
+async function getStoredDataFileHandle() {
+  const database = await openHandleDatabase();
+  const handle = await new Promise((resolve, reject) => {
+    const request = database.transaction("handles", "readonly").objectStore("handles").get("dataFile");
+    request.onsuccess = () => resolve(request.result || null);
+    request.onerror = () => reject(request.error || new Error("Could not read the selected data file setting."));
+  });
+  database.close();
+  return handle;
+}
+
+function scheduleFileSave() {
+  if (state.storageMode !== "file" || !state.dataFileHandle) {
+    return;
+  }
+
+  state.fileWriteQueue = state.fileWriteQueue.then(async () => {
+    if (state.storageMode !== "file" || !state.dataFileHandle) {
+      return;
+    }
+
+    setStorageStatus("Saving changes to your data file…");
+    const writable = await state.dataFileHandle.createWritable();
+    try {
+      await writable.write(`${JSON.stringify(getDataSnapshot(), null, 2)}\n`);
+      await writable.close();
+      setStorageStatus(`File mode · changes saved to ${state.dataFileHandle.name}.`);
+    } catch (error) {
+      await writable.abort().catch(() => {});
+      throw error;
+    }
+  }).catch((error) => {
+    setStorageStatus(`Could not save the data file: ${error.message}`);
+    showToast("Could not save to the data file. Check file access in Settings.");
+  });
+}
+
+function downloadDataFile() {
+  const file = new Blob([`${JSON.stringify(getDataSnapshot(), null, 2)}\n`], {
+    type: "application/json",
+  });
+  const url = URL.createObjectURL(file);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "draftwise-data.json";
+  link.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  showToast("Data file downloaded");
+}
+
+function activateFileMode() {
+  state.storageMode = "file";
+  try {
+    localStorage.setItem(STORAGE_KEYS.storageMode, "file");
+  } catch {
+    // The current selection still applies for this page session.
+  }
+  elements.storageMode.value = "file";
+}
+
+async function chooseDataFile() {
+  if (!window.showSaveFilePicker) {
+    elements.importDataFile.click();
+    elements.storageMode.value = state.storageMode;
+    setStorageStatus("Choose a saved file to import, or download a new backup. Saving overwrites from this browser is not available here.");
+    return;
+  }
+
+  try {
+    const handle = await window.showSaveFilePicker({
+      suggestedName: "draftwise-data.json",
+      types: [{ description: "Draftwise data", accept: { "application/json": [".json"] } }],
+    });
+    const contents = await (await handle.getFile()).text();
+    let imported = null;
+    if (contents.trim()) {
+      imported = parseDataSnapshot(contents);
+      if (!window.confirm("Load the contents of this file? It will replace the data currently shown in Draftwise.")) {
+        elements.storageMode.value = state.storageMode;
+        return;
+      }
+    }
+
+    if (imported) {
+      applyDataSnapshot(imported);
+    }
+    state.dataFileHandle = handle;
+    activateFileMode();
+    try {
+      await storeDataFileHandle(handle);
+    } catch (error) {
+      setStorageStatus(`${error.message} The file is connected for this tab, but may need to be selected again next time.`);
+    }
+    setStorageStatus(`File mode · saving changes to ${handle.name}.`);
+    scheduleFileSave();
+  } catch (error) {
+    if (error.name !== "AbortError") {
+      setStorageStatus(`Could not open the data file: ${error.message}`);
+      showToast("Could not open the data file.");
+    }
+    elements.storageMode.value = state.storageMode;
+  }
+}
+
+async function restoreFileMode() {
+  if (state.storageMode !== "file") {
+    elements.storageMode.value = "localStorage";
+    setStorageStatus("Your drafts, settings, prompt, and history are saved in this browser.");
+    return;
+  }
+
+  elements.storageMode.value = "file";
+  try {
+    const handle = await getStoredDataFileHandle();
+    if (!handle || (await handle.queryPermission({ mode: "readwrite" })) !== "granted") {
+      setStorageStatus("Reconnect your data file to load it and continue saving.");
+      return;
+    }
+
+    const data = parseDataSnapshot(await (await handle.getFile()).text());
+    state.dataFileHandle = handle;
+    applyDataSnapshot(data);
+    setStorageStatus(`File mode · changes will be saved to ${handle.name}.`);
+  } catch (error) {
+    setStorageStatus(`Could not reconnect to your data file: ${error.message}`);
+  }
+}
+
+async function importDataFile(file) {
+  try {
+    const imported = parseDataSnapshot(await file.text());
+    if (!window.confirm("Load this data file? It will replace the data currently shown in Draftwise.")) {
+      return;
+    }
+    applyDataSnapshot(imported);
+    state.dataFileHandle = null;
+    activateFileMode();
+    setStorageStatus("File mode · imported data is loaded. Download a new data file after making changes to keep a backup.");
+    showToast("Data file imported");
+  } catch (error) {
+    setStorageStatus(`Could not import the data file: ${error.message}`);
+    showToast("Could not import the data file.");
+  }
 }
 
 function countWords(text) {
@@ -581,10 +842,13 @@ function deleteHistoryEntry() {
     try {
       localStorage.removeItem(STORAGE_KEYS.history);
     } catch {
-      showToast("Could not update history.");
-      return;
+      if (state.storageMode !== "file") {
+        showToast("Could not update history.");
+        return;
+      }
     }
     state.history = [];
+    scheduleFileSave();
   }
 
   updateHistoryBadge();
@@ -607,11 +871,14 @@ function clearAllHistory() {
   try {
     localStorage.removeItem(STORAGE_KEYS.history);
   } catch {
-    showToast("Could not clear history.");
-    return;
+    if (state.storageMode !== "file") {
+      showToast("Could not clear history.");
+      return;
+    }
   }
 
   state.history = [];
+  scheduleFileSave();
   updateHistoryBadge();
   showHistoryList();
   renderHistory();
@@ -1149,6 +1416,29 @@ function bindEvents() {
 
   elements.settingsButton.addEventListener("click", () => openSettings());
   elements.providerButton.addEventListener("click", () => openSettings());
+  elements.storageMode.addEventListener("change", () => {
+    if (elements.storageMode.value === "file") {
+      chooseDataFile();
+      return;
+    }
+
+    state.storageMode = "localStorage";
+    try {
+      localStorage.setItem(STORAGE_KEYS.storageMode, "localStorage");
+    } catch {
+      showToast("Could not save the storage preference.");
+    }
+    setStorageStatus("Your drafts, settings, prompt, and history are saved in this browser.");
+  });
+  elements.chooseDataFile.addEventListener("click", chooseDataFile);
+  elements.exportDataFile.addEventListener("click", downloadDataFile);
+  elements.importDataFile.addEventListener("change", async () => {
+    const [file] = elements.importDataFile.files || [];
+    if (file) {
+      await importDataFile(file);
+    }
+    elements.importDataFile.value = "";
+  });
 
   elements.promptButton.addEventListener("click", openPrompt);
   elements.closePrompt.addEventListener("click", () => elements.promptDialog.close());
@@ -1213,6 +1503,7 @@ function init() {
   updateHistoryBadge();
   bindEvents();
   loadCoachPrompt();
+  restoreFileMode();
 
   if (state.themeMeta) {
     state.themeMeta.content = window.matchMedia("(prefers-color-scheme: dark)").matches ? "#141210" : "#f5f1e8";

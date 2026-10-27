@@ -133,6 +133,19 @@
       </div>
 
       <form id="settingsForm" novalidate>
+        <label class="field-label" for="storageMode">Data storage</label>
+        <select id="storageMode" class="input">
+          <option value="localStorage">This browser (default)</option>
+          <option value="file">Text file</option>
+        </select>
+        <p id="storageStatus" class="field-help">Your drafts, settings, prompt, and history are saved in this browser.</p>
+        <div class="storage-actions">
+          <button type="button" id="chooseDataFile" class="secondary-button small">Choose data file</button>
+          <button type="button" id="exportDataFile" class="text-button">Download data file</button>
+          <label class="text-button storage-import" for="importDataFile">Import data file</label>
+          <input id="importDataFile" type="file" accept=".json,.txt,application/json,text/plain" hidden>
+        </div>
+
         <label class="field-label" for="providerSelect">Provider</label>
         <select id="providerSelect" class="input"></select>
         <p id="providerHelp" class="field-help"></p>
@@ -166,7 +179,7 @@
         </div>
 
         <p class="privacy-note sheet-note">
-          API keys live in this browser's local storage. On a shared device, clear your key when you're done. Use a restricted key where possible.
+          A data file contains your drafts, feedback history, preferences, and any API keys. Keep it somewhere private. API keys are sent only to the provider you select.
         </p>
       </form>
     </div>
