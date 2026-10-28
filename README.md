@@ -7,6 +7,7 @@ A mobile-first writing feedback app. Paste a draft, pick a focus, and get struct
 ## What it does
 
 - Accepts up to 20,000 characters of English or Vietnamese writing.
+- Lets you clear the current draft with one click.
 - Sends the draft to an LLM with a predefined writing-coach prompt.
 - Streams back a TL;DR, scorecard, corrections, corrected and polished versions, a thinking review, an improvement plan, and a practice exercise.
 - Renders comparison tables as clean tables on desktop and stacked label/value cards on mobile.

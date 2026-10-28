@@ -23,6 +23,7 @@ const elements = {
   form: document.getElementById("feedbackForm"),
   draft: document.getElementById("draft"),
   wordCount: document.getElementById("wordCount"),
+  clearDraftButton: document.getElementById("clearDraftButton"),
   formError: document.getElementById("formError"),
   submitButton: document.getElementById("submitButton"),
   submitLabel: document.querySelector("#submitButton .button-label"),
@@ -835,6 +836,7 @@ function providerModel(providerId) {
 function updateWordCount() {
   const words = countWords(elements.draft.value);
   elements.wordCount.textContent = `${words.toLocaleString()} ${words === 1 ? "word" : "words"}`;
+  elements.clearDraftButton.hidden = !elements.draft.value;
 }
 
 function autosizeDraft() {
@@ -1702,6 +1704,14 @@ function bindEvents() {
     if (!elements.formError.hidden) {
       setFormError("");
     }
+  });
+
+  elements.clearDraftButton.addEventListener("click", () => {
+    elements.draft.value = "";
+    elements.draft.dispatchEvent(new Event("input", { bubbles: true }));
+    window.clearTimeout(saveDraftSoon.timer);
+    writeStorage(STORAGE_KEYS.draft, "");
+    elements.draft.focus({ preventScroll: true });
   });
 
   elements.draft.addEventListener("keydown", (event) => {
