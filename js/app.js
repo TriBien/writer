@@ -52,6 +52,7 @@ const elements = {
   importDataFile: document.getElementById("importDataFile"),
   fontSizeInput: document.getElementById("fontSizeInput"),
   fontSizeValue: document.getElementById("fontSizeValue"),
+  themeSelect: document.getElementById("themeSelect"),
   providerSelect: document.getElementById("providerSelect"),
   providerHelp: document.getElementById("providerHelp"),
   keyField: document.getElementById("keyField"),
@@ -142,7 +143,7 @@ function writeStorage(key, value) {
 }
 
 function normalizeSettings(stored) {
-  const fallback = { provider: "pollinations", keys: {}, models: {}, prompt: "", fontSize: 17 };
+  const fallback = { provider: "pollinations", keys: {}, models: {}, prompt: "", fontSize: 17, theme: "system" };
 
   if (!stored || typeof stored !== "object" || Array.isArray(stored)) {
     return fallback;
@@ -160,6 +161,7 @@ function normalizeSettings(stored) {
     ),
     prompt: typeof stored.prompt === "string" ? stored.prompt : "",
     fontSize: Number.isFinite(stored.fontSize) ? Math.min(Math.max(stored.fontSize, 14), 24) : 17,
+    theme: ["system", "light", "dark"].includes(stored.theme) ? stored.theme : "system",
   };
 }
 
@@ -180,6 +182,20 @@ function applyReadingFontSize(fontSize = state.settings.fontSize) {
   elements.fontSizeInput.value = String(fontSize);
   elements.fontSizeValue.value = `${fontSize} px`;
   elements.fontSizeValue.textContent = `${fontSize} px`;
+}
+
+function applyTheme(theme = state.settings.theme) {
+  if (theme === "system") {
+    document.documentElement.removeAttribute("data-theme");
+  } else {
+    document.documentElement.dataset.theme = theme;
+  }
+
+  if (state.themeMeta) {
+    const isDark = theme === "dark" ||
+      (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    state.themeMeta.content = isDark ? "#141210" : "#f5f1e8";
+  }
 }
 
 function createHistoryId() {
@@ -1633,6 +1649,7 @@ function openSettings(options = {}) {
   elements.fontSizeInput.value = String(state.settings.fontSize);
   elements.fontSizeValue.value = `${state.settings.fontSize} px`;
   elements.fontSizeValue.textContent = `${state.settings.fontSize} px`;
+  elements.themeSelect.value = state.settings.theme;
   elements.providerSelect.value = state.settingsDraft.provider;
   populateProviderFields(state.settingsDraft.provider);
   setSettingsError(options.message || "");
@@ -1665,8 +1682,10 @@ function saveProviderSettings(event) {
   state.settings.keys = { ...state.settingsDraft.keys };
   state.settings.models = { ...state.settingsDraft.models };
   state.settings.fontSize = Number(elements.fontSizeInput.value);
+  state.settings.theme = elements.themeSelect.value;
   saveSettings();
   applyReadingFontSize();
+  applyTheme();
   updateProviderLine();
   elements.settingsDialog.close();
   showToast("Settings saved");
@@ -1813,8 +1832,8 @@ function bindEvents() {
   window.addEventListener("resize", autosizeDraft);
 
   window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", (event) => {
-    if (state.themeMeta) {
-      state.themeMeta.content = event.matches ? "#141210" : "#f5f1e8";
+    if (state.settings.theme === "system") {
+      applyTheme();
     }
   });
 }
@@ -1834,13 +1853,11 @@ function init() {
   updateProviderLine();
   updatePromptStatus();
   updateHistoryBadge();
+  applyTheme();
   bindEvents();
   loadCoachPrompt();
   restoreFileMode();
 
-  if (state.themeMeta) {
-    state.themeMeta.content = window.matchMedia("(prefers-color-scheme: dark)").matches ? "#141210" : "#f5f1e8";
-  }
 }
 
 init();
