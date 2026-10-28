@@ -335,6 +335,7 @@ function applyDataSnapshot(data) {
   updatePromptStatus();
   updateHistoryBadge();
   applyReadingFontSize();
+  applyTheme();
 }
 
 function setStorageStatus(message) {
@@ -1753,6 +1754,11 @@ function bindEvents() {
     applyReadingFontSize(fontSize);
     elements.fontSizeValue.value = `${fontSize} px`;
     elements.fontSizeValue.textContent = `${fontSize} px`;
+  });
+  elements.themeSelect.addEventListener("change", () => {
+    state.settings.theme = elements.themeSelect.value;
+    saveSettings();
+    applyTheme();
   });
   elements.storageMode.addEventListener("change", () => {
     if (elements.storageMode.value === "file") {
