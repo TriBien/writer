@@ -47,6 +47,7 @@ const elements = {
   localFileActions: document.getElementById("localFileActions"),
   googleDriveActions: document.getElementById("googleDriveActions"),
   connectDriveFile: document.getElementById("connectDriveFile"),
+  disconnectGoogleAccount: document.getElementById("disconnectGoogleAccount"),
   exportDataFile: document.getElementById("exportDataFile"),
   importDataFile: document.getElementById("importDataFile"),
   fontSizeInput: document.getElementById("fontSizeInput"),
@@ -432,13 +433,17 @@ function requestGoogleAccessToken(onToken) {
     callback: async (response) => {
       if (response.error || !response.access_token) {
         state.googleAccessToken = null;
+        updateStorageActions();
         setStorageStatus(`Google sign-in failed: ${response.error_description || response.error || "No access token was returned."}`);
         return;
       }
       state.googleAccessToken = response.access_token;
+      updateStorageActions();
       try {
         await onToken(response.access_token);
       } catch (error) {
+        state.googleAccessToken = null;
+        updateStorageActions();
         setStorageStatus(`Google Drive error: ${error.message}`);
         showToast("Could not access the Google Drive file.");
       }
@@ -466,6 +471,7 @@ async function driveRequest(url, token, options = {}) {
     if (response.status === 401) {
       message = "Google Drive access expired. Reconnect the selected file in Settings.";
       state.googleAccessToken = null;
+      updateStorageActions();
     }
     throw new Error(message);
   }
@@ -510,6 +516,8 @@ function activateGoogleDriveMode(file) {
 function updateStorageActions() {
   elements.localFileActions.hidden = state.storageMode !== "file";
   elements.googleDriveActions.hidden = state.storageMode !== "googleDrive";
+  elements.connectDriveFile.hidden = Boolean(state.googleAccessToken);
+  elements.disconnectGoogleAccount.hidden = !state.googleAccessToken;
 }
 
 async function connectSelectedDriveFile(token) {
@@ -524,10 +532,12 @@ async function connectSelectedDriveFile(token) {
     imported = content.trim() ? parseDataSnapshot(content) : null;
   } catch (error) {
     state.googleAccessToken = null;
+    updateStorageActions();
     throw error;
   }
   if (imported && !window.confirm("Load the contents of this Google Drive file? It will replace the data currently shown in Draftwise.")) {
     state.googleAccessToken = null;
+    updateStorageActions();
     setStorageStatus("Google Drive file not loaded. Reconnect and confirm to resume syncing.");
     return;
   }
@@ -546,6 +556,25 @@ async function connectDriveFile() {
     return;
   }
   requestGoogleAccessToken(connectOrCreateDriveFile);
+}
+
+function disconnectGoogleAccount() {
+  state.googleAccessToken = null;
+  state.googleDriveFileId = null;
+  state.googleDriveFileName = null;
+  state.storageMode = "localStorage";
+  elements.storageMode.value = "localStorage";
+  updateStorageActions();
+
+  try {
+    localStorage.setItem(STORAGE_KEYS.storageMode, "localStorage");
+    localStorage.removeItem(STORAGE_KEYS.googleDriveFileId);
+    localStorage.removeItem(STORAGE_KEYS.googleDriveFileName);
+    setStorageStatus("Google Drive disconnected. Your drafts remain available in this browser.");
+  } catch {
+    setStorageStatus("Google Drive disconnected for this tab, but the connection details could not be cleared from browser storage.");
+    showToast("Could not clear the saved Google Drive connection.");
+  }
 }
 
 function prepareGoogleSignIn() {
@@ -1732,6 +1761,7 @@ function bindEvents() {
   });
   elements.chooseDataFile.addEventListener("click", chooseDataFile);
   elements.connectDriveFile.addEventListener("click", connectDriveFile);
+  elements.disconnectGoogleAccount.addEventListener("click", disconnectGoogleAccount);
   elements.exportDataFile.addEventListener("click", downloadDataFile);
   elements.importDataFile.addEventListener("change", async () => {
     const [file] = elements.importDataFile.files || [];
