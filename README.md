@@ -1,4 +1,4 @@
-# Draftwise
+# Writer
 
 A mobile-first writing feedback app. Paste a draft, pick a focus, and get structured feedback from a free LLM — no account, backend, or build step.
 
