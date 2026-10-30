@@ -1,4 +1,4 @@
-import { SAMPLE_DRAFT, buildPrompt, loadDefaultPrompt } from "./prompt.js";
+import { buildPrompt, loadDefaultPrompt } from "./prompt.js";
 import { PROVIDERS, PROVIDER_LIST } from "./providers.js";
 import { renderMarkdown } from "./markdown.js";
 
@@ -27,7 +27,6 @@ const elements = {
   formError: document.getElementById("formError"),
   submitButton: document.getElementById("submitButton"),
   submitLabel: document.querySelector("#submitButton .button-label"),
-  sampleButton: document.getElementById("sampleButton"),
   providerButton: document.getElementById("providerButton"),
   historyButton: document.getElementById("historyButton"),
   historyCount: document.getElementById("historyCount"),
@@ -1719,13 +1718,6 @@ function bindEvents() {
       event.preventDefault();
       elements.form.requestSubmit();
     }
-  });
-
-  elements.sampleButton.addEventListener("click", () => {
-    elements.draft.value = SAMPLE_DRAFT;
-    elements.draft.dispatchEvent(new Event("input", { bubbles: true }));
-    writeStorage(STORAGE_KEYS.draft, SAMPLE_DRAFT);
-    elements.draft.focus();
   });
 
   elements.copyButton.addEventListener("click", copyFeedback);
