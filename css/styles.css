@@ -763,6 +763,19 @@ svg {
   font-style: italic;
 }
 
+.prose .math {
+  font-family: var(--font-serif);
+  font-style: italic;
+  color: var(--ink);
+}
+
+.prose .math-display {
+  display: block;
+  margin: 0.9em 0;
+  text-align: center;
+  font-size: 1.2em;
+}
+
 .prose blockquote {
   margin: 1em 0;
   padding: 0.7em 0.9em;

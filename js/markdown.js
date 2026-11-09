@@ -7,15 +7,98 @@ function escapeHtml(value) {
     .replace(/'/g, "&#39;");
 }
 
+const LATEX_TEXT = {
+  "\\rightarrow": "→",
+  "\\to": "→",
+  "\\leftarrow": "←",
+  "\\implies": "⇒",
+  "\\impliedby": "⇐",
+  "\\Rightarrow": "⇒",
+  "\\Leftrightarrow": "⇔",
+  "\\leftrightarrow": "↔",
+  "\\mapsto": "→",
+  "\\uparrow": "↑",
+  "\\downarrow": "↓",
+  "\\alpha": "α",
+  "\\beta": "β",
+  "\\gamma": "γ",
+  "\\delta": "δ",
+  "\\epsilon": "ε",
+  "\\varepsilon": "ε",
+  "\\zeta": "ζ",
+  "\\eta": "η",
+  "\\theta": "θ",
+  "\\vartheta": "θ",
+  "\\iota": "ι",
+  "\\kappa": "κ",
+  "\\lambda": "λ",
+  "\\mu": "μ",
+  "\\nu": "ν",
+  "\\xi": "ξ",
+  "\\pi": "π",
+  "\\rho": "ρ",
+  "\\sigma": "σ",
+  "\\tau": "τ",
+  "\\upsilon": "υ",
+  "\\phi": "φ",
+  "\\varphi": "φ",
+  "\\chi": "χ",
+  "\\psi": "ψ",
+  "\\omega": "ω",
+  "\\Gamma": "Γ",
+  "\\Delta": "Δ",
+  "\\Theta": "Θ",
+  "\\Lambda": "Λ",
+  "\\Xi": "Ξ",
+  "\\Pi": "Π",
+  "\\Sigma": "Σ",
+  "\\Upsilon": "Υ",
+  "\\Phi": "Φ",
+  "\\Psi": "Ψ",
+  "\\Omega": "Ω",
+  "\\times": "×",
+  "\\cdot": "·",
+  "\\div": "÷",
+  "\\pm": "±",
+  "\\mp": "∓",
+  "\\ldots": "…",
+  "\\cdots": "…",
+  "\\dots": "…",
+  "\\infty": "∞",
+  "\\approx": "≈",
+  "\\sim": "∼",
+  "\\cong": "≅",
+  "\\equiv": "≡",
+  "\\le": "≤",
+  "\\ge": "≥",
+  "\\neq": "≠",
+  "\\ne": "≠",
+};
+
+function latexToText(latex) {
+  const translated = latex.replace(/\\[a-zA-Z]+/g, (command) => LATEX_TEXT[command] ?? command);
+  return translated.trim();
+}
+
 function renderInline(text) {
   const code = [];
+  const math = [];
 
   let output = text.replace(/`([^`\n]+)`/g, (_, content) => {
     code.push(`<code>${content}</code>`);
     return `\u0000${code.length - 1}\u0000`;
   });
 
+  const storeMath = (latex, display) => {
+    math.push(`<span class="math${display ? " math-display" : ""}">${escapeHtml(latexToText(latex))}</span>`);
+    return `\u0001${math.length - 1}\u0001`;
+  };
+
   output = output
+    .replace(/\$\$([\s\S]+?)\$\$/g, (match, latex) => (/\\[a-zA-Z]/.test(latex) ? storeMath(latex, true) : match))
+    .replace(/\$([^$\n]+?)\$/g, (match, latex) => (/\\[a-zA-Z]/.test(latex) ? storeMath(latex, false) : match))
+    .replace(/\\\[([\s\S]+?)\\\]/g, (_, latex) => storeMath(latex, true))
+    .replace(/\\\(([\s\S]+?)\\\)/g, (_, latex) => storeMath(latex, false))
     .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>")
     .replace(/__([^_\n]+)__/g, "<strong>$1</strong>")
     .replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, "$1<em>$2</em>")
@@ -24,6 +107,8 @@ function renderInline(text) {
       /\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g,
       '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>',
     );
+
+  output = output.replace(/\u0001(\d+)\u0001/g, (_, index) => math[Number(index)]);
 
   return output.replace(/\u0000(\d+)\u0000/g, (_, index) => code[Number(index)]);
 }
