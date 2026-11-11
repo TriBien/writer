@@ -19,6 +19,13 @@ const STORAGE_KEYS = {
 };
 const DATA_FILE_FORMAT = "draftwise-data";
 
+const GOOGLE_STATUS_LABELS = {
+  disconnected: "Google · not connected",
+  connecting: "Google · connecting…",
+  connected: "Google · connected",
+  error: "Google · reconnect",
+};
+
 const elements = {
   form: document.getElementById("feedbackForm"),
   draft: document.getElementById("draft"),
@@ -38,6 +45,9 @@ const elements = {
   copyButton: document.getElementById("copyButton"),
   retryButton: document.getElementById("retryButton"),
   settingsButton: document.getElementById("settingsButton"),
+  googleStatus: document.getElementById("googleStatus"),
+  googleStatusDot: document.getElementById("googleStatusDot"),
+  googleStatusText: document.getElementById("googleStatusText"),
   settingsDialog: document.getElementById("settingsDialog"),
   settingsForm: document.getElementById("settingsForm"),
   settingsError: document.getElementById("settingsError"),
@@ -101,6 +111,7 @@ const state = {
   googleDriveFileName: readStorage(STORAGE_KEYS.googleDriveFileName),
   googleAccessToken: null,
   googleApisPromise: null,
+  googleStatus: "disconnected",
   fileWriteQueue: Promise.resolve(),
   controller: null,
   requestId: 0,
@@ -342,6 +353,15 @@ function setStorageStatus(message) {
   elements.storageStatus.textContent = message;
 }
 
+function setGoogleStatus(status) {
+  state.googleStatus = status;
+  elements.googleStatusDot.classList.toggle("is-connected", status === "connected");
+  elements.googleStatusDot.classList.toggle("is-connecting", status === "connecting");
+  elements.googleStatusDot.classList.toggle("is-error", status === "error");
+  elements.googleStatusDot.classList.toggle("is-disconnected", status === "disconnected");
+  elements.googleStatusText.textContent = GOOGLE_STATUS_LABELS[status] || GOOGLE_STATUS_LABELS.disconnected;
+}
+
 function openHandleDatabase() {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open("draftwise-storage", 1);
@@ -451,16 +471,19 @@ function requestGoogleAccessToken(onToken) {
       if (response.error || !response.access_token) {
         state.googleAccessToken = null;
         updateStorageActions();
+        setGoogleStatus("error");
         setStorageStatus(`Google sign-in failed: ${response.error_description || response.error || "No access token was returned."}`);
         return;
       }
       state.googleAccessToken = response.access_token;
       updateStorageActions();
+      setGoogleStatus("connected");
       try {
         await onToken(response.access_token);
       } catch (error) {
         state.googleAccessToken = null;
         updateStorageActions();
+        setGoogleStatus("error");
         setStorageStatus(`Google Drive error: ${error.message}`);
         showToast("Could not access the Google Drive file.");
       }
@@ -489,6 +512,7 @@ async function driveRequest(url, token, options = {}) {
       message = "Google Drive access expired. Reconnect the selected file in Settings.";
       state.googleAccessToken = null;
       updateStorageActions();
+      setGoogleStatus("error");
     }
     throw new Error(message);
   }
@@ -519,6 +543,7 @@ function activateGoogleDriveMode(file) {
   state.storageMode = "googleDrive";
   state.googleDriveFileId = file.id;
   state.googleDriveFileName = file.name || "Draftwise data";
+  setGoogleStatus("connected");
   try {
     localStorage.setItem(STORAGE_KEYS.storageMode, "googleDrive");
     localStorage.setItem(STORAGE_KEYS.googleDriveFileId, state.googleDriveFileId);
@@ -572,6 +597,7 @@ async function connectDriveFile() {
     prepareGoogleSignIn();
     return;
   }
+  setGoogleStatus("connecting");
   requestGoogleAccessToken(connectOrCreateDriveFile);
 }
 
@@ -581,6 +607,7 @@ function disconnectGoogleAccount() {
   state.googleDriveFileName = null;
   state.storageMode = "localStorage";
   elements.storageMode.value = "localStorage";
+  setGoogleStatus("disconnected");
   updateStorageActions();
 
   try {
@@ -661,6 +688,35 @@ async function connectOrCreateDriveFile(token) {
   state.googleDriveFileId = file.id;
   state.googleDriveFileName = file.name;
   await connectSelectedDriveFile(token);
+}
+
+async function syncGoogleDriveFile(token) {
+  const file = await findGoogleDriveFile(token);
+  if (!file) {
+    await createGoogleDriveFile(token);
+    return;
+  }
+
+  state.googleDriveFileId = file.id;
+  state.googleDriveFileName = file.name;
+  await uploadDriveFile(state.googleDriveFileId, token, getDataSnapshot());
+  setStorageStatus(`Google Drive · changes saved to ${state.googleDriveFileName}.`);
+}
+
+function autoConnectGoogleDrive() {
+  if (state.storageMode !== "googleDrive") {
+    return;
+  }
+
+  setGoogleStatus("connecting");
+  setStorageStatus("Connecting to Google Drive…");
+
+  loadGoogleApis()
+    .then(() => requestGoogleAccessToken(syncGoogleDriveFile))
+    .catch((error) => {
+      setGoogleStatus("error");
+      setStorageStatus(error.message);
+    });
 }
 
 function downloadDataFile() {
@@ -1778,6 +1834,7 @@ function bindEvents() {
     }
     updateStorageActions();
     if (state.storageMode === "googleDrive") {
+      setGoogleStatus(state.googleAccessToken ? "connected" : "disconnected");
       setStorageStatus(state.googleDriveFileId
         ? `Google Drive · sign in to load ${state.googleDriveFileName} and continue saving.`
         : `Google Drive · sign in to find or create ${GOOGLE_DRIVE_FILE_NAME}.`);
@@ -1866,6 +1923,9 @@ function init() {
   loadCoachPrompt();
   restoreFileMode();
 
+  if (state.storageMode === "googleDrive") {
+    autoConnectGoogleDrive();
+  }
 }
 
 init();
