@@ -8,11 +8,15 @@ const HISTORY_LIMIT = 100;
 const HISTORY_SIZE_LIMIT = 1000000;
 const GOOGLE_CLIENT_ID = "303971907183-7468lhojmuprdmov7ib4gnd1plinqm01.apps.googleusercontent.com";
 const GOOGLE_DRIVE_FILE_NAME = "writer.json";
+const GOOGLE_DRIVE_POLL_INTERVAL = 30000;
+const GOOGLE_DRIVE_SAVE_DELAY = 600;
 const STORAGE_KEYS = {
   draft: "draftwise:draft",
   settings: "draftwise:settings",
   defaultPrompt: "draftwise:defaultPrompt",
   history: "draftwise:history",
+  deletedHistory: "draftwise:deletedHistory",
+  updatedAt: "draftwise:updatedAt",
   storageMode: "draftwise:storageMode",
   googleDriveFileId: "draftwise:googleDriveFileId",
   googleDriveFileName: "draftwise:googleDriveFileName",
@@ -112,6 +116,10 @@ const state = {
   googleAccessToken: null,
   googleApisPromise: null,
   googleStatus: "disconnected",
+  googleDrivePollTimer: null,
+  googleDrivePullPromise: null,
+  googleDriveSaveTimer: null,
+  dataUpdatedAt: Number(readStorage(STORAGE_KEYS.updatedAt)) || 0,
   fileWriteQueue: Promise.resolve(),
   controller: null,
   requestId: 0,
@@ -123,6 +131,7 @@ const state = {
   defaultPrompt: "",
   promptLoadState: "loading",
   history: loadHistory(),
+  deletedHistory: loadDeletedHistory(),
   historyEntry: null,
   themeMeta: document.querySelector('meta[name="theme-color"]'),
 };
@@ -149,8 +158,19 @@ function writeStorage(key, value) {
   }
 
   if (key !== STORAGE_KEYS.storageMode) {
+    if (key !== STORAGE_KEYS.defaultPrompt) {
+      markDataUpdated();
+    }
     scheduleFileSave();
   }
+}
+
+function markDataUpdated() {
+  state.dataUpdatedAt = Date.now();
+
+  try {
+    localStorage.setItem(STORAGE_KEYS.updatedAt, String(state.dataUpdatedAt));
+  } catch {}
 }
 
 function normalizeSettings(stored) {
@@ -250,14 +270,38 @@ function loadHistory() {
       return [];
     }
 
+    const deletedIds = new Set(loadDeletedHistory());
+
     return stored
       .map(normalizeHistoryEntry)
-      .filter(Boolean)
+      .filter((entry) => entry && !deletedIds.has(entry.id))
       .sort((a, b) => b.createdAt - a.createdAt)
       .slice(0, HISTORY_LIMIT);
   } catch {
     return [];
   }
+}
+
+function loadDeletedHistory() {
+  try {
+    const stored = JSON.parse(readStorage(STORAGE_KEYS.deletedHistory) || "[]");
+    if (!Array.isArray(stored)) {
+      return [];
+    }
+
+    return [...new Set(stored.filter((id) => typeof id === "string" && id))].slice(0, HISTORY_LIMIT);
+  } catch {
+    return [];
+  }
+}
+
+function setDeletedHistory(ids) {
+  state.deletedHistory = [...new Set(ids.filter((id) => typeof id === "string" && id))]
+    .slice(0, HISTORY_LIMIT);
+
+  try {
+    localStorage.setItem(STORAGE_KEYS.deletedHistory, JSON.stringify(state.deletedHistory));
+  } catch {}
 }
 
 function writeHistory(entries) {
@@ -275,6 +319,7 @@ function writeHistory(entries) {
           continue;
         }
       }
+      markDataUpdated();
       scheduleFileSave();
       return list;
     }
@@ -285,15 +330,84 @@ function writeHistory(entries) {
   return null;
 }
 
+function mergeDeletedHistory(primary, secondary) {
+  return [...new Set([...(primary || []), ...(secondary || [])])].slice(0, HISTORY_LIMIT);
+}
+
+function mergeHistoryEntries(primary, secondary, deleted) {
+  const byId = new Map();
+  const deletedIds = new Set(deleted || []);
+
+  for (const entry of [...secondary, ...primary]) {
+    if (entry && typeof entry.id === "string" && !deletedIds.has(entry.id)) {
+      byId.set(entry.id, entry);
+    }
+  }
+
+  return [...byId.values()]
+    .sort((a, b) => b.createdAt - a.createdAt)
+    .slice(0, HISTORY_LIMIT);
+}
+
+function mergeDataSnapshots(local, remote, { preferLocal = false } = {}) {
+  if (!remote) {
+    return local;
+  }
+
+  if (!local) {
+    return remote;
+  }
+
+  const localTime = state.dataUpdatedAt || 0;
+  const remoteTime = Date.parse(remote.savedAt || "") || 0;
+  const useRemote = !preferLocal && remoteTime > localTime;
+  const primary = useRemote ? remote : local;
+  const secondary = useRemote ? local : remote;
+  const deletedHistory = mergeDeletedHistory(primary.deletedHistory, secondary.deletedHistory);
+
+  return {
+    format: DATA_FILE_FORMAT,
+    version: 1,
+    savedAt: primary.savedAt || new Date().toISOString(),
+    draft: primary.draft,
+    settings: primary.settings,
+    defaultPrompt: primary.defaultPrompt || secondary.defaultPrompt,
+    history: mergeHistoryEntries(primary.history || [], secondary.history || [], deletedHistory),
+    deletedHistory,
+  };
+}
+
+function snapshotSignature(data) {
+  return JSON.stringify({
+    draft: data.draft,
+    settings: data.settings,
+    defaultPrompt: data.defaultPrompt,
+    history: data.history,
+    deletedHistory: data.deletedHistory,
+  });
+}
+
+function mergeRemoteSnapshot(remote, options = {}) {
+  const local = getDataSnapshot();
+  const merged = mergeDataSnapshots(local, remote, options);
+
+  if (snapshotSignature(merged) !== snapshotSignature(local)) {
+    applyDataSnapshot(merged);
+  }
+
+  return merged;
+}
+
 function getDataSnapshot() {
   return {
     format: DATA_FILE_FORMAT,
     version: 1,
-    savedAt: new Date().toISOString(),
+    savedAt: new Date(state.dataUpdatedAt || Date.now()).toISOString(),
     draft: elements.draft.value,
     settings: state.settings,
     defaultPrompt: state.defaultPrompt || readStorage(STORAGE_KEYS.defaultPrompt) || "",
     history: state.history,
+    deletedHistory: state.deletedHistory,
   };
 }
 
@@ -317,25 +431,34 @@ function parseDataSnapshot(text) {
     draft: data.draft,
     settings: normalizeSettings(data.settings),
     defaultPrompt: typeof data.defaultPrompt === "string" ? data.defaultPrompt : "",
+    savedAt: typeof data.savedAt === "string" ? data.savedAt : "",
     history: data.history
       .map(normalizeHistoryEntry)
       .filter(Boolean)
       .sort((a, b) => b.createdAt - a.createdAt)
       .slice(0, HISTORY_LIMIT),
+    deletedHistory: Array.isArray(data.deletedHistory)
+      ? [...new Set(data.deletedHistory.filter((id) => typeof id === "string" && id))].slice(0, HISTORY_LIMIT)
+      : [],
   };
 }
 
 function applyDataSnapshot(data) {
   state.settings = data.settings;
   state.history = data.history;
+  state.deletedHistory = data.deletedHistory || [];
   state.defaultPrompt = data.defaultPrompt;
-  elements.draft.value = data.draft;
+  if (elements.draft.value !== data.draft) {
+    elements.draft.value = data.draft;
+  }
+  markDataUpdated();
 
   try {
     localStorage.setItem(STORAGE_KEYS.draft, data.draft);
     localStorage.setItem(STORAGE_KEYS.settings, JSON.stringify(state.settings));
     localStorage.setItem(STORAGE_KEYS.defaultPrompt, state.defaultPrompt);
     localStorage.setItem(STORAGE_KEYS.history, JSON.stringify(state.history));
+    localStorage.setItem(STORAGE_KEYS.deletedHistory, JSON.stringify(state.deletedHistory));
   } catch {
     // The selected file remains the durable copy when browser storage is unavailable.
   }
@@ -345,6 +468,9 @@ function applyDataSnapshot(data) {
   updateProviderLine();
   updatePromptStatus();
   updateHistoryBadge();
+  if (elements.historyDialog.open && elements.historyDetailView.hidden) {
+    renderHistory();
+  }
   applyReadingFontSize();
   applyTheme();
 }
@@ -402,36 +528,77 @@ function scheduleFileSave() {
     return;
   }
 
-  state.fileWriteQueue = state.fileWriteQueue.then(async () => {
-    if (state.storageMode === "googleDrive") {
-      if (!state.googleDriveFileId || !state.googleAccessToken) {
-        return;
-      }
+  if (state.storageMode === "googleDrive") {
+    window.clearTimeout(state.googleDriveSaveTimer);
+    state.googleDriveSaveTimer = window.setTimeout(() => {
+      state.fileWriteQueue = state.fileWriteQueue
+        .then(saveDataFileChanges)
+        .catch(handleFileSaveError);
+    }, GOOGLE_DRIVE_SAVE_DELAY);
+    return;
+  }
 
-      setStorageStatus("Saving changes to Google Drive…");
-      await uploadDriveFile(state.googleDriveFileId, state.googleAccessToken, getDataSnapshot());
-      setStorageStatus(`Google Drive · changes saved to ${state.googleDriveFileName}.`);
+  state.fileWriteQueue = state.fileWriteQueue
+    .then(saveDataFileChanges)
+    .catch(handleFileSaveError);
+}
+
+function handleFileSaveError(error) {
+  setStorageStatus(`Could not save the data file: ${error.message}`);
+  showToast("Could not save the data file. Check storage access in Settings.");
+}
+
+async function mergeRemoteChangesBeforeSave() {
+  const token = state.googleAccessToken;
+  const fileId = state.googleDriveFileId;
+  if (!token || !fileId) {
+    return;
+  }
+
+  const content = await fetchDriveFile(fileId, token);
+  if (
+    !content.trim() ||
+    state.storageMode !== "googleDrive" ||
+    state.googleAccessToken !== token
+  ) {
+    return;
+  }
+
+  mergeRemoteSnapshot(parseDataSnapshot(content), { preferLocal: true });
+}
+
+async function saveDataFileChanges() {
+  if (state.storageMode === "googleDrive") {
+    if (!state.googleDriveFileId || !state.googleAccessToken) {
       return;
     }
 
-    if (state.storageMode !== "file" || !state.dataFileHandle) {
+    setStorageStatus("Saving changes to Google Drive…");
+    await mergeRemoteChangesBeforeSave();
+
+    if (!state.googleDriveFileId || !state.googleAccessToken) {
       return;
     }
 
-    setStorageStatus("Saving changes to your data file…");
-    const writable = await state.dataFileHandle.createWritable();
-    try {
-      await writable.write(`${JSON.stringify(getDataSnapshot(), null, 2)}\n`);
-      await writable.close();
-      setStorageStatus(`File mode · changes saved to ${state.dataFileHandle.name}.`);
-    } catch (error) {
-      await writable.abort().catch(() => {});
-      throw error;
-    }
-  }).catch((error) => {
-    setStorageStatus(`Could not save the data file: ${error.message}`);
-    showToast("Could not save the data file. Check storage access in Settings.");
-  });
+    await uploadDriveFile(state.googleDriveFileId, state.googleAccessToken, getDataSnapshot());
+    setStorageStatus(`Google Drive · changes saved to ${state.googleDriveFileName}.`);
+    return;
+  }
+
+  if (state.storageMode !== "file" || !state.dataFileHandle) {
+    return;
+  }
+
+  setStorageStatus("Saving changes to your data file…");
+  const writable = await state.dataFileHandle.createWritable();
+  try {
+    await writable.write(`${JSON.stringify(getDataSnapshot(), null, 2)}\n`);
+    await writable.close();
+    setStorageStatus(`File mode · changes saved to ${state.dataFileHandle.name}.`);
+  } catch (error) {
+    await writable.abort().catch(() => {});
+    throw error;
+  }
 }
 
 function loadScript(src) {
@@ -539,6 +706,54 @@ async function uploadDriveFile(fileId, token, data) {
   );
 }
 
+function startGoogleDrivePolling() {
+  window.clearInterval(state.googleDrivePollTimer);
+  state.googleDrivePollTimer = window.setInterval(pullGoogleDriveChanges, GOOGLE_DRIVE_POLL_INTERVAL);
+}
+
+function stopGoogleDrivePolling() {
+  window.clearInterval(state.googleDrivePollTimer);
+  state.googleDrivePollTimer = null;
+  window.clearTimeout(state.googleDriveSaveTimer);
+  state.googleDriveSaveTimer = null;
+}
+
+async function pullGoogleDriveChanges() {
+  if (
+    state.storageMode !== "googleDrive" ||
+    !state.googleDriveFileId ||
+    !state.googleAccessToken ||
+    state.googleDrivePullPromise
+  ) {
+    return;
+  }
+
+  const token = state.googleAccessToken;
+  state.googleDrivePullPromise = (async () => {
+    try {
+      const content = await fetchDriveFile(state.googleDriveFileId, token);
+      if (
+        !content.trim() ||
+        state.storageMode !== "googleDrive" ||
+        state.googleAccessToken !== token
+      ) {
+        return;
+      }
+
+      const remote = parseDataSnapshot(content);
+      mergeRemoteSnapshot(remote, { preferLocal: true });
+    } catch (error) {
+      if (state.storageMode === "googleDrive") {
+        setStorageStatus(`Google Drive sync paused: ${error.message}`);
+      }
+    } finally {
+      state.googleDrivePullPromise = null;
+    }
+  })();
+
+  await state.googleDrivePullPromise;
+}
+
 function activateGoogleDriveMode(file) {
   state.storageMode = "googleDrive";
   state.googleDriveFileId = file.id;
@@ -553,6 +768,7 @@ function activateGoogleDriveMode(file) {
   }
   elements.storageMode.value = "googleDrive";
   updateStorageActions();
+  startGoogleDrivePolling();
 }
 
 function updateStorageActions() {
@@ -568,23 +784,23 @@ async function connectSelectedDriveFile(token) {
     return;
   }
 
-  let imported;
+  let remote;
   try {
     const content = await fetchDriveFile(state.googleDriveFileId, token);
-    imported = content.trim() ? parseDataSnapshot(content) : null;
+    remote = content.trim() ? parseDataSnapshot(content) : null;
   } catch (error) {
     state.googleAccessToken = null;
     updateStorageActions();
     throw error;
   }
-  if (imported && !window.confirm("Load the contents of this Google Drive file? It will replace the data currently shown in Draftwise.")) {
+  if (remote && !window.confirm("Merge the sessions in this Google Drive file with Draftwise? Sessions from both devices will be kept.")) {
     state.googleAccessToken = null;
     updateStorageActions();
     setStorageStatus("Google Drive file not loaded. Reconnect and confirm to resume syncing.");
     return;
   }
-  if (imported) {
-    applyDataSnapshot(imported);
+  if (remote) {
+    mergeRemoteSnapshot(remote, { preferLocal: false });
   }
   activateGoogleDriveMode({ id: state.googleDriveFileId, name: state.googleDriveFileName });
   setStorageStatus(`Google Drive · saving changes to ${state.googleDriveFileName}.`);
@@ -606,6 +822,7 @@ function disconnectGoogleAccount() {
   state.googleDriveFileId = null;
   state.googleDriveFileName = null;
   state.storageMode = "localStorage";
+  stopGoogleDrivePolling();
   elements.storageMode.value = "localStorage";
   setGoogleStatus("disconnected");
   updateStorageActions();
@@ -699,7 +916,19 @@ async function syncGoogleDriveFile(token) {
 
   state.googleDriveFileId = file.id;
   state.googleDriveFileName = file.name;
-  await uploadDriveFile(state.googleDriveFileId, token, getDataSnapshot());
+
+  const content = await fetchDriveFile(file.id, token);
+  if (content.trim()) {
+    mergeRemoteSnapshot(parseDataSnapshot(content), { preferLocal: false });
+  }
+
+  activateGoogleDriveMode(file);
+
+  if (state.googleAccessToken !== token) {
+    return;
+  }
+
+  await uploadDriveFile(file.id, token, getDataSnapshot());
   setStorageStatus(`Google Drive · changes saved to ${state.googleDriveFileName}.`);
 }
 
@@ -1046,8 +1275,8 @@ function renderHistory() {
   elements.historyEmpty.hidden = count > 0;
   elements.clearHistory.hidden = count === 0;
   elements.historySummary.textContent = count
-    ? `${count} saved ${count === 1 ? "session" : "sessions"} on this device.`
-    : "Saved sessions stay in this browser.";
+    ? `${count} saved ${count === 1 ? "session" : "sessions"}.`
+    : "Saved sessions follow your Data storage setting.";
 
   state.history.forEach((entry) => {
     const button = document.createElement("button");
@@ -1230,9 +1459,11 @@ function deleteHistoryEntry() {
       }
     }
     state.history = [];
-    scheduleFileSave();
   }
 
+  setDeletedHistory([entry.id, ...state.deletedHistory]);
+  markDataUpdated();
+  scheduleFileSave();
   updateHistoryBadge();
   showHistoryList();
   renderHistory();
@@ -1250,6 +1481,8 @@ function clearAllHistory() {
     return;
   }
 
+  const deletedIds = state.history.map((entry) => entry.id);
+
   try {
     localStorage.removeItem(STORAGE_KEYS.history);
   } catch {
@@ -1260,6 +1493,8 @@ function clearAllHistory() {
   }
 
   state.history = [];
+  setDeletedHistory([...deletedIds, ...state.deletedHistory]);
+  markDataUpdated();
   scheduleFileSave();
   updateHistoryBadge();
   showHistoryList();
@@ -1822,6 +2057,7 @@ function bindEvents() {
     if (elements.storageMode.value === "file") {
       // chooseDataFile();
       state.storageMode = "file";
+      stopGoogleDrivePolling();
       updateStorageActions();
       return;
     }
@@ -1839,7 +2075,11 @@ function bindEvents() {
         ? `Google Drive · sign in to load ${state.googleDriveFileName} and continue saving.`
         : `Google Drive · sign in to find or create ${GOOGLE_DRIVE_FILE_NAME}.`);
       prepareGoogleSignIn();
+      if (state.googleAccessToken) {
+        startGoogleDrivePolling();
+      }
     } else {
+      stopGoogleDrivePolling();
       setStorageStatus("Your drafts, settings, prompt, and history are saved in this browser.");
     }
   });
@@ -1895,6 +2135,16 @@ function bindEvents() {
   elements.settingsForm.addEventListener("submit", saveProviderSettings);
 
   window.addEventListener("resize", autosizeDraft);
+
+  window.addEventListener("focus", () => {
+    pullGoogleDriveChanges();
+  });
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+      pullGoogleDriveChanges();
+    }
+  });
 
   window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", (event) => {
     if (state.settings.theme === "system") {
